@@ -1,5 +1,7 @@
 # piximport
 
+![piximport](assets/image.png)
+
 CLI tool to import photos from SD cards to `~/Pictures`, automatically
 organised by EXIF date and camera make.
 
