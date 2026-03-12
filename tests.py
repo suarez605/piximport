@@ -599,3 +599,140 @@ class TestCopyPhotos(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# ---------------------------------------------------------------------------
+# Tests: agrupamiento por fecha
+# ---------------------------------------------------------------------------
+
+class TestGroupByDate(unittest.TestCase):
+    """Tests para la función _group_by_date."""
+
+    def _photo(self, year: int, month: int, day: int, make: str = "SONY") -> pi.PhotoInfo:
+        return pi.PhotoInfo(
+            path=Path(f"/sd/{year}{month:02d}{day:02d}.jpg"),
+            date=datetime(year, month, day, 10, 0, 0),
+            make=make,
+            category="SOOC",
+        )
+
+    def test_groups_by_year(self):
+        photos = [self._photo(2025, 1, 10), self._photo(2026, 3, 8)]
+        groups = pi._group_by_date(photos)
+        self.assertIn(2025, groups)
+        self.assertIn(2026, groups)
+
+    def test_groups_by_day_within_year(self):
+        photos = [
+            self._photo(2025, 1, 10),
+            self._photo(2025, 1, 11),
+            self._photo(2025, 1, 10),
+        ]
+        groups = pi._group_by_date(photos)
+        self.assertIn("01-10", groups[2025])
+        self.assertIn("01-11", groups[2025])
+        self.assertEqual(len(groups[2025]["01-10"]), 2)
+        self.assertEqual(len(groups[2025]["01-11"]), 1)
+
+    def test_sorted_years(self):
+        photos = [self._photo(2026, 1, 1), self._photo(2024, 1, 1), self._photo(2025, 1, 1)]
+        groups = pi._group_by_date(photos)
+        self.assertEqual(list(groups.keys()), [2024, 2025, 2026])
+
+    def test_sorted_days_within_year(self):
+        photos = [self._photo(2025, 3, 15), self._photo(2025, 1, 5), self._photo(2025, 2, 20)]
+        groups = pi._group_by_date(photos)
+        days = list(groups[2025].keys())
+        self.assertEqual(days, sorted(days))
+
+    def test_empty_input(self):
+        self.assertEqual(pi._group_by_date([]), {})
+
+
+# ---------------------------------------------------------------------------
+# Tests: selector interactivo de fotos
+# ---------------------------------------------------------------------------
+
+class TestSelectPhotos(unittest.TestCase):
+    """
+    Tests para select_photos(), simulando respuestas del usuario mediante
+    unittest.mock.patch sobre questionary.checkbox.
+
+    questionary.checkbox().ask() devuelve:
+    - lista de valores de las Choice marcadas → usuario confirmó
+    - None                                   → usuario canceló (Ctrl+C)
+    """
+
+    def _make_photos(self) -> list[pi.PhotoInfo]:
+        """Crea un conjunto de fotos de prueba con 3 días distintos en 2 años."""
+        base = [
+            # 2025
+            pi.PhotoInfo(Path("/sd/a.jpg"), datetime(2025, 1, 10), "SONY",     "SOOC"),
+            pi.PhotoInfo(Path("/sd/b.arw"), datetime(2025, 1, 10), "SONY",     "RAW"),
+            pi.PhotoInfo(Path("/sd/c.jpg"), datetime(2025, 6, 20), "FUJIFILM", "SOOC"),
+            # 2026
+            pi.PhotoInfo(Path("/sd/d.jpg"), datetime(2026, 3,  8), "CANON",    "SOOC"),
+            pi.PhotoInfo(Path("/sd/e.cr3"), datetime(2026, 3,  8), "CANON",    "RAW"),
+        ]
+        return base
+
+    def test_all_selected_returns_all(self):
+        """Cuando el usuario selecciona todos los días, vuelven todas las fotos."""
+        photos = self._make_photos()
+        # Los valores de Choice son "MM-DD"
+        with patch("questionary.checkbox") as mock_cb:
+            mock_cb.return_value.ask.return_value = ["01-10", "06-20", "03-08"]
+            result = pi.select_photos(photos)
+        self.assertEqual(len(result), len(photos))
+
+    def test_deselect_one_day(self):
+        """Desmarcar un día excluye solo las fotos de ese día."""
+        photos = self._make_photos()
+        with patch("questionary.checkbox") as mock_cb:
+            # Excluir 2025/01-10 (2 fotos) → deben quedar 3
+            mock_cb.return_value.ask.return_value = ["06-20", "03-08"]
+            result = pi.select_photos(photos)
+        self.assertEqual(len(result), 3)
+        dates = {p.date.strftime("%m-%d") for p in result}
+        self.assertNotIn("01-10", dates)
+
+    def test_deselect_entire_year_2025(self):
+        """Desmarcar todos los días de 2025 devuelve solo fotos de 2026."""
+        photos = self._make_photos()
+        with patch("questionary.checkbox") as mock_cb:
+            mock_cb.return_value.ask.return_value = ["03-08"]
+            result = pi.select_photos(photos)
+        self.assertTrue(all(p.date.year == 2026 for p in result))
+        self.assertEqual(len(result), 2)
+
+    def test_cancel_returns_empty(self):
+        """Ctrl+C (ask() devuelve None) → lista vacía."""
+        photos = self._make_photos()
+        with patch("questionary.checkbox") as mock_cb:
+            mock_cb.return_value.ask.return_value = None
+            result = pi.select_photos(photos)
+        self.assertEqual(result, [])
+
+    def test_empty_selection_returns_empty(self):
+        """Selección vacía (ningún día marcado) → lista vacía."""
+        photos = self._make_photos()
+        with patch("questionary.checkbox") as mock_cb:
+            mock_cb.return_value.ask.return_value = []
+            result = pi.select_photos(photos)
+        self.assertEqual(result, [])
+
+    def test_same_mmdd_in_different_years_disambiguated(self):
+        """
+        Si existe el mismo MM-DD en dos años distintos y el usuario selecciona
+        ese valor, deben incluirse fotos de AMBOS años (ya que el valor de
+        Choice es solo "MM-DD" y puede aparecer en ambos).
+        """
+        photos = [
+            pi.PhotoInfo(Path("/sd/x.jpg"), datetime(2025, 3, 8), "SONY",  "SOOC"),
+            pi.PhotoInfo(Path("/sd/y.jpg"), datetime(2026, 3, 8), "CANON", "SOOC"),
+        ]
+        with patch("questionary.checkbox") as mock_cb:
+            mock_cb.return_value.ask.return_value = ["03-08"]
+            result = pi.select_photos(photos)
+        # Ambas fotos tienen 03-08 aunque en distintos años → deben incluirse las dos
+        self.assertEqual(len(result), 2)
