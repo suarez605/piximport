@@ -436,16 +436,18 @@ def _parse_raf(fh) -> tuple[str, datetime | None]:
     la cabecera RAF: 84 bytes de cabecera fija + offsets al JPEG embebido.
 
     Estructura de la cabecera RAF (offsets en bytes, big-endian):
-        0x00 - 15 bytes: magic "FUJIFILMCCD-RAW"
+        0x00 - 16 bytes: magic "FUJIFILMCCD-RAW "
         0x10 - 4 bytes:  versión del formato
         0x14 - 8 bytes:  número de cámara
         0x1C - 32 bytes: nombre del modelo
         0x3C - 4 bytes:  versión de directorio
-        0x40 - 4 bytes:  offset al JPEG embebido (big-endian)
-        0x44 - 4 bytes:  tamaño del JPEG embebido
+        0x40 - 20 bytes: reservado
+        0x54 - 4 bytes:  offset al JPEG embebido (big-endian)
+        0x58 - 4 bytes:  tamaño del JPEG embebido
     """
-    header = fh.read(84)
-    if len(header) < 84:
+    # Leer suficientes bytes para alcanzar los offsets 0x54..0x5B (92 bytes total)
+    header = fh.read(92)
+    if len(header) < 92:
         return UNKNOWN_CAMERA, None
 
     # Verificar magic RAF
