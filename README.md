@@ -1,4 +1,4 @@
-# photo-importer
+# piximport
 
 CLI para importar fotos desde tarjetas SD a `~/Pictures`, organizadas
 automáticamente por fecha EXIF y fabricante de cámara.
@@ -17,28 +17,36 @@ automáticamente por fecha EXIF y fabricante de cámara.
 
 ## Instalación
 
-### Con pip (recomendado)
+### Con pipx (recomendado — aislado, sin tocar el entorno global)
 
 ```bash
-pip install photo-importer
+pipx install piximport
 ```
 
-### Con pipx (aislado, sin tocar el entorno global)
+### Directamente desde GitHub
 
 ```bash
-pipx install photo-importer
+pipx install git+https://github.com/suarez605/piximport.git
+# o una versión concreta:
+pipx install git+https://github.com/suarez605/piximport.git@v1.0.0
+```
+
+### Con pip
+
+```bash
+pip install piximport
 ```
 
 ### Con Homebrew (macOS)
 
 ```bash
-brew install suarez605/tap/photo-importer
+brew install suarez605/tap/piximport
 ```
 
 ## Uso
 
 ```bash
-photo-importer
+piximport
 ```
 
 El CLI detecta automáticamente las tarjetas SD conectadas, muestra un
@@ -60,10 +68,10 @@ los metadatos del sistema de ficheros.
 ## Desarrollo
 
 ```bash
-git clone https://github.com/suarez605/photo-importer
-cd photo-importer
+git clone https://github.com/suarez605/piximport
+cd piximport
 python3.11 -m venv env
 source env/bin/activate
-pip install -e ".[dev]"
+pip install -e .
 python -m unittest tests -v
 ```

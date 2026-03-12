@@ -1,9 +1,9 @@
-class PhotoImporter < Formula
+class Piximport < Formula
   include Language::Python::Virtualenv
 
   desc "CLI to import photos from SD cards into ~/Pictures, organised by date and camera"
-  homepage "https://github.com/suarez605/photo-importer"
-  url "https://github.com/suarez605/photo-importer/archive/refs/tags/v1.0.0.tar.gz"
+  homepage "https://github.com/suarez605/piximport"
+  url "https://github.com/suarez605/piximport/archive/refs/tags/v1.0.0.tar.gz"
   # sha256 must be updated when the tarball changes:
   #   curl -sL <url> | shasum -a 256
   sha256 "PLACEHOLDER_UPDATE_WITH_REAL_SHA256"
@@ -37,7 +37,7 @@ class PhotoImporter < Formula
   test do
     # Smoke test: the command must exist and exit without crashing when there
     # is no terminal attached (questionary exits gracefully in that case).
-    system "#{bin}/photo-importer", "--help" rescue nil
-    assert_predicate bin/"photo-importer", :exist?
+    system "#{bin}/piximport", "--help" rescue nil
+    assert_predicate bin/"piximport", :exist?
   end
 end

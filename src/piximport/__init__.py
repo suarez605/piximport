@@ -1,6 +1,6 @@
 #!/usr/bin/env python3.11
 """
-photo_importer.py — CLI para importar fotos desde tarjetas SD a ~/Pictures.
+piximport — CLI para importar fotos desde tarjetas SD a ~/Pictures.
 
 Estructura de destino:
     ~/Pictures/<AÑO>/<MM-DD>/<FABRICANTE>/<SOOC|RAW|EDITED>/
@@ -14,7 +14,7 @@ Tipos de archivo soportados:
     RAW   : .arw .raf .nef .cr2 .cr3 .dng .orf .rw2
 
 Uso:
-    python3.11 photo_importer.py
+    python3.11 -m piximport
 
 Requisitos:
     Python 3.11+
@@ -44,8 +44,10 @@ PICTURES_ROOT = Path.home() / "Pictures"
 
 # Extensiones clasificadas (en minúsculas)
 SOOC_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".heif", ".heic", ".hif"})
-RAW_EXTENSIONS: frozenset[str]  = frozenset({".arw", ".raf", ".nef", ".cr2", ".cr3", ".dng", ".orf", ".rw2"})
-ALL_EXTENSIONS: frozenset[str]  = SOOC_EXTENSIONS | RAW_EXTENSIONS
+RAW_EXTENSIONS: frozenset[str] = frozenset(
+    {".arw", ".raf", ".nef", ".cr2", ".cr3", ".dng", ".orf", ".rw2"}
+)
+ALL_EXTENSIONS: frozenset[str] = SOOC_EXTENSIONS | RAW_EXTENSIONS
 
 # Nombre de la subcarpeta cuando no se puede determinar el fabricante
 UNKNOWN_CAMERA = "NO_CAMERA"
@@ -54,23 +56,28 @@ UNKNOWN_CAMERA = "NO_CAMERA"
 CAMERA_SUBDIRS = ("SOOC", "RAW", "EDITED")
 
 # Volúmenes del sistema que se excluyen del menú de selección
-SYSTEM_VOLUMES: frozenset[str] = frozenset({"Macintosh HD", "Data", "Preboot", "Recovery", "VM"})
+SYSTEM_VOLUMES: frozenset[str] = frozenset(
+    {"Macintosh HD", "Data", "Preboot", "Recovery", "VM"}
+)
 
 
 # ---------------------------------------------------------------------------
 # Tipos de datos
 # ---------------------------------------------------------------------------
 
+
 class PhotoInfo(NamedTuple):
     """Metadatos extraídos de una foto durante el escaneo."""
-    path: Path       # Ruta absoluta al archivo original en la SD
-    date: datetime   # Fecha de captura (EXIF) o de modificación (fallback)
-    make: str        # Fabricante de la cámara, ej: "SONY", "FUJIFILM"
-    category: str    # "SOOC" o "RAW"
+
+    path: Path  # Ruta absoluta al archivo original en la SD
+    date: datetime  # Fecha de captura (EXIF) o de modificación (fallback)
+    make: str  # Fabricante de la cámara, ej: "SONY", "FUJIFILM"
+    category: str  # "SOOC" o "RAW"
 
 
 class CopyResult(NamedTuple):
     """Estadísticas del proceso de copia."""
+
     copied: int
     skipped: int
     errors: int
@@ -79,6 +86,7 @@ class CopyResult(NamedTuple):
 # ---------------------------------------------------------------------------
 # Detección de medios externos (macOS)
 # ---------------------------------------------------------------------------
+
 
 def list_external_volumes() -> list[Path]:
     """
@@ -127,7 +135,10 @@ def _is_internal_volume(mount_point: Path) -> bool:
             timeout=5,
         )
         output = result.stdout.lower()
-        if "internal:                  yes" in output or "internal:                 yes" in output:
+        if (
+            "internal:                  yes" in output
+            or "internal:                 yes" in output
+        ):
             return True
         if "protocol:               apple fabric" in output:
             return True
@@ -206,9 +217,9 @@ def _format_bytes(n: int) -> str:
 # ---------------------------------------------------------------------------
 
 # Tags EXIF relevantes
-_TAG_MAKE          = 0x010F   # IFD0: fabricante de la cámara
-_TAG_EXIF_IFD      = 0x8769   # IFD0: puntero al IFD EXIF subyacente
-_TAG_DATE_ORIGINAL = 0x9003   # EXIF IFD: fecha y hora de captura original
+_TAG_MAKE = 0x010F  # IFD0: fabricante de la cámara
+_TAG_EXIF_IFD = 0x8769  # IFD0: puntero al IFD EXIF subyacente
+_TAG_DATE_ORIGINAL = 0x9003  # EXIF IFD: fecha y hora de captura original
 
 # Formato estándar de fecha en EXIF: "YYYY:MM:DD HH:MM:SS"
 _EXIF_DATE_FORMAT = "%Y:%m:%d %H:%M:%S"
@@ -248,6 +259,7 @@ def read_exif(file_path: Path) -> tuple[str, datetime | None]:
 
 # — JPEG ——————————————————————————————————————————————————————————————————
 
+
 def _parse_jpeg_exif(fh) -> tuple[str, datetime | None]:
     """
     Localiza el segmento APP1 con magic "Exif\\x00\\x00" en un stream JPEG
@@ -266,9 +278,11 @@ def _parse_jpeg_exif(fh) -> tuple[str, datetime | None]:
         raw_len = fh.read(2)
         if len(raw_len) < 2:
             break
-        seg_len = struct.unpack(">H", raw_len)[0] - 2  # longitud excluye los 2 bytes propios
+        seg_len = (
+            struct.unpack(">H", raw_len)[0] - 2
+        )  # longitud excluye los 2 bytes propios
 
-        if marker[1] == 0xE1:           # APP1
+        if marker[1] == 0xE1:  # APP1
             data = fh.read(seg_len)
             if data[:6] == b"Exif\x00\x00":
                 return _parse_tiff_block(data[6:])
@@ -280,6 +294,7 @@ def _parse_jpeg_exif(fh) -> tuple[str, datetime | None]:
 
 
 # — TIFF / RAW ————————————————————————————————————————————————————————————
+
 
 def _parse_tiff_exif(fh) -> tuple[str, datetime | None]:
     """Lee el archivo completo como bloque TIFF (para RAW TIFF-based)."""
@@ -314,7 +329,9 @@ def _parse_tiff_block(data: bytes) -> tuple[str, datetime | None]:
         return UNKNOWN_CAMERA, None
 
     ifd0_offset = struct.unpack_from(f"{endian}I", data, 4)[0]
-    make_raw, exif_ifd_offset = _read_ifd(data, ifd0_offset, endian, {_TAG_MAKE, _TAG_EXIF_IFD})
+    make_raw, exif_ifd_offset = _read_ifd(
+        data, ifd0_offset, endian, {_TAG_MAKE, _TAG_EXIF_IFD}
+    )
 
     date_raw: str | None = None
     if exif_ifd_offset:
@@ -352,7 +369,7 @@ def _read_ifd(
         return None, None
 
     ascii_val: str | None = None
-    long_val: int | None  = None
+    long_val: int | None = None
     pos = offset + 2
 
     for _ in range(num_entries):
@@ -360,15 +377,17 @@ def _read_ifd(
             break
 
         tag, dtype, count = struct.unpack_from(f"{endian}HHI", data, pos)
-        value_or_offset   = struct.unpack_from(f"{endian}I",    data, pos + 8)[0]
+        value_or_offset = struct.unpack_from(f"{endian}I", data, pos + 8)[0]
 
         if tag in tags_wanted:
-            if dtype == 2:   # ASCII
+            if dtype == 2:  # ASCII
                 if count <= 4:
                     raw = data[pos + 8 : pos + 8 + count]
                 else:
                     raw = data[value_or_offset : value_or_offset + count]
-                ascii_val = raw.rstrip(b"\x00").decode("ascii", errors="replace").strip()
+                ascii_val = (
+                    raw.rstrip(b"\x00").decode("ascii", errors="replace").strip()
+                )
 
             elif dtype == 4:  # LONG — puntero a sub-IFD
                 long_val = value_or_offset
@@ -378,7 +397,9 @@ def _read_ifd(
     return ascii_val, long_val
 
 
-def _build_result(make_raw: str | None, date_raw: str | None) -> tuple[str, datetime | None]:
+def _build_result(
+    make_raw: str | None, date_raw: str | None
+) -> tuple[str, datetime | None]:
     """
     Normaliza el fabricante y parsea la fecha extraídos del IFD.
 
@@ -408,6 +429,7 @@ def _build_result(make_raw: str | None, date_raw: str | None) -> tuple[str, date
 
 
 # — RAF (Fujifilm) ————————————————————————————————————————————————————————
+
 
 def _parse_raf(fh) -> tuple[str, datetime | None]:
     """
@@ -444,12 +466,14 @@ def _parse_raf(fh) -> tuple[str, datetime | None]:
     jpeg_data = fh.read(jpeg_length)
 
     import io
+
     return _parse_jpeg_exif(io.BytesIO(jpeg_data))
 
 
 # ---------------------------------------------------------------------------
 # Clasificación y escaneo de archivos
 # ---------------------------------------------------------------------------
+
 
 def classify_file(path: Path) -> str | None:
     """
@@ -520,7 +544,9 @@ def _scan_dir(directory: Path, results: list[PhotoInfo]) -> None:
                     if date is None:
                         date = datetime.fromtimestamp(entry.stat().st_mtime)
 
-                    results.append(PhotoInfo(path=path, date=date, make=make, category=category))
+                    results.append(
+                        PhotoInfo(path=path, date=date, make=make, category=category)
+                    )
     except PermissionError:
         pass
 
@@ -548,10 +574,7 @@ def _group_by_date(photos: list[PhotoInfo]) -> _Groups:
         day_key = photo.date.strftime("%m-%d")
         groups[photo.date.year][day_key].append(photo)
     # Convertir a dicts ordenados para iteración predecible
-    return {
-        year: dict(sorted(days.items()))
-        for year, days in sorted(groups.items())
-    }
+    return {year: dict(sorted(days.items())) for year, days in sorted(groups.items())}
 
 
 def select_photos(photos: list[PhotoInfo]) -> list[PhotoInfo]:
@@ -609,14 +632,14 @@ def select_photos(photos: list[PhotoInfo]) -> list[PhotoInfo]:
                 selected_set.add((year, day_key))
 
     return [
-        p for p in photos
-        if (p.date.year, p.date.strftime("%m-%d")) in selected_set
+        p for p in photos if (p.date.year, p.date.strftime("%m-%d")) in selected_set
     ]
 
 
 # ---------------------------------------------------------------------------
 # Construcción de rutas de destino
 # ---------------------------------------------------------------------------
+
 
 def build_dest_path(photo: PhotoInfo, dest_root: Path) -> Path:
     """
@@ -636,9 +659,9 @@ def build_dest_path(photo: PhotoInfo, dest_root: Path) -> Path:
     Returns:
         Path completo al archivo de destino (sin crear el archivo).
     """
-    year_dir  = str(photo.date.year)
-    date_dir  = photo.date.strftime("%m-%d")
-    make_dir  = photo.make.upper()
+    year_dir = str(photo.date.year)
+    date_dir = photo.date.strftime("%m-%d")
+    make_dir = photo.make.upper()
 
     dest_dir = dest_root / year_dir / date_dir / make_dir / photo.category
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -664,6 +687,7 @@ def _ensure_camera_subdirs(camera_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 # Manejo de colisiones de nombres
 # ---------------------------------------------------------------------------
+
 
 def resolve_collision(dest_path: Path, source_path: Path) -> Path:
     """
@@ -702,6 +726,7 @@ def resolve_collision(dest_path: Path, source_path: Path) -> Path:
 # Motor de copia
 # ---------------------------------------------------------------------------
 
+
 def copy_photos(photos: list[PhotoInfo], dest_root: Path) -> CopyResult:
     """
     Copia todas las fotos al árbol de destino mostrando progreso en tiempo real.
@@ -719,15 +744,15 @@ def copy_photos(photos: list[PhotoInfo], dest_root: Path) -> CopyResult:
     Returns:
         CopyResult con el conteo de archivos copiados, saltados y errores.
     """
-    total  = len(photos)
+    total = len(photos)
     copied = skipped = errors = 0
-    width  = len(str(total))
+    width = len(str(total))
 
     for idx, photo in enumerate(photos, start=1):
         prefix = f"  [{idx:>{width}}/{total}]"
         try:
             proposed = build_dest_path(photo, dest_root)
-            final    = resolve_collision(proposed, photo.path)
+            final = resolve_collision(proposed, photo.path)
 
             if final == proposed and proposed.exists():
                 print(f"{prefix} SALTAR  {photo.path.name}  (ya existe)")
@@ -735,7 +760,9 @@ def copy_photos(photos: list[PhotoInfo], dest_root: Path) -> CopyResult:
                 continue
 
             shutil.copy2(photo.path, final)
-            print(f"{prefix} COPIAR  {photo.path.name}  →  {final.relative_to(dest_root)}")
+            print(
+                f"{prefix} COPIAR  {photo.path.name}  →  {final.relative_to(dest_root)}"
+            )
             copied += 1
 
         except (OSError, shutil.Error) as exc:
@@ -748,6 +775,7 @@ def copy_photos(photos: list[PhotoInfo], dest_root: Path) -> CopyResult:
 # ---------------------------------------------------------------------------
 # Resumen final
 # ---------------------------------------------------------------------------
+
 
 def print_summary(result: CopyResult, dest_root: Path) -> None:
     """
@@ -772,6 +800,7 @@ def print_summary(result: CopyResult, dest_root: Path) -> None:
 # ---------------------------------------------------------------------------
 # Punto de entrada
 # ---------------------------------------------------------------------------
+
 
 def main() -> int:
     """

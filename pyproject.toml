@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "photo-importer"
+name = "piximport"
 version = "1.0.0"
 description = "CLI to import photos from SD cards into ~/Pictures, organised by date and camera make"
 readme = "README.md"
@@ -24,7 +24,7 @@ dependencies = [
 
 [project.scripts]
 # After `pip install .` or `brew install`, this command becomes available globally
-photo-importer = "photo_importer:main"
+piximport = "piximport:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

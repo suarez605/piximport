@@ -1,6 +1,6 @@
 #!/usr/bin/env python3.11
 """
-tests.py — Tests unitarios para photo_importer.py
+tests.py — Tests unitarios para piximport.
 
 Cubre:
     - Clasificación de archivos por extensión
@@ -28,12 +28,13 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Importar el módulo bajo prueba
-import photo_importer as pi
+import piximport as pi
 
 
 # ---------------------------------------------------------------------------
 # Helpers para construir bytes EXIF sintéticos
 # ---------------------------------------------------------------------------
+
 
 def _pack_ifd_entry(endian: str, tag: int, dtype: int, count: int, value: int) -> bytes:
     """Empaqueta una entrada IFD de 12 bytes."""
@@ -88,7 +89,9 @@ def _build_tiff_block(
 
     # EXIF IFD
     exif_num = struct.pack(f"{endian}H", 1)
-    entry_date = _pack_ifd_entry(endian, pi._TAG_DATE_ORIGINAL, 2, len(date_bytes), date_offset)
+    entry_date = _pack_ifd_entry(
+        endian, pi._TAG_DATE_ORIGINAL, 2, len(date_bytes), date_offset
+    )
     exif_next = struct.pack(f"{endian}I", 0)
     exif_ifd = exif_num + entry_date + exif_next
 
@@ -133,6 +136,7 @@ def _build_raf_with_exif(make: str, date_str: str) -> bytes:
 # ---------------------------------------------------------------------------
 # Tests: clasificación de archivos
 # ---------------------------------------------------------------------------
+
 
 class TestClassifyFile(unittest.TestCase):
     """Tests para la función classify_file."""
@@ -193,6 +197,7 @@ class TestClassifyFile(unittest.TestCase):
 # Tests: parser EXIF — JPEG
 # ---------------------------------------------------------------------------
 
+
 class TestExifParserJPEG(unittest.TestCase):
     """Tests para el parser EXIF sobre archivos JPEG sintéticos."""
 
@@ -242,6 +247,7 @@ class TestExifParserJPEG(unittest.TestCase):
 # Tests: parser EXIF — TIFF-based RAW
 # ---------------------------------------------------------------------------
 
+
 class TestExifParserTIFF(unittest.TestCase):
     """Tests para el parser EXIF sobre bloques TIFF (ARW, NEF, etc.)."""
 
@@ -286,6 +292,7 @@ class TestExifParserTIFF(unittest.TestCase):
 # Tests: parser EXIF — RAF (Fujifilm)
 # ---------------------------------------------------------------------------
 
+
 class TestExifParserRAF(unittest.TestCase):
     """Tests para el parser RAF de Fujifilm."""
 
@@ -321,6 +328,7 @@ class TestExifParserRAF(unittest.TestCase):
 # Tests: construcción de rutas de destino
 # ---------------------------------------------------------------------------
 
+
 class TestBuildDestPath(unittest.TestCase):
     """Tests para la función build_dest_path."""
 
@@ -330,7 +338,9 @@ class TestBuildDestPath(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def _make_photo(self, make: str, date: datetime, category: str, name: str) -> pi.PhotoInfo:
+    def _make_photo(
+        self, make: str, date: datetime, category: str, name: str
+    ) -> pi.PhotoInfo:
         return pi.PhotoInfo(
             path=Path(f"/fake/sd/{name}"),
             date=date,
@@ -349,7 +359,9 @@ class TestBuildDestPath(unittest.TestCase):
         self.assertIn("01-15", dest.parts)
 
     def test_correct_make_dir(self):
-        photo = self._make_photo("fujifilm", datetime(2026, 5, 20), "RAW", "DSCF001.RAF")
+        photo = self._make_photo(
+            "fujifilm", datetime(2026, 5, 20), "RAW", "DSCF001.RAF"
+        )
         dest = pi.build_dest_path(photo, self.tmp)
         self.assertIn("FUJIFILM", dest.parts)
 
@@ -372,7 +384,9 @@ class TestBuildDestPath(unittest.TestCase):
             self.assertTrue((camera_dir / subdir).is_dir(), f"Falta {subdir}")
 
     def test_unknown_camera_dir(self):
-        photo = self._make_photo(pi.UNKNOWN_CAMERA, datetime(2026, 7, 4), "SOOC", "file.jpg")
+        photo = self._make_photo(
+            pi.UNKNOWN_CAMERA, datetime(2026, 7, 4), "SOOC", "file.jpg"
+        )
         dest = pi.build_dest_path(photo, self.tmp)
         self.assertIn(pi.UNKNOWN_CAMERA, dest.parts)
 
@@ -380,6 +394,7 @@ class TestBuildDestPath(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Tests: resolución de colisiones
 # ---------------------------------------------------------------------------
+
 
 class TestResolveCollision(unittest.TestCase):
     """Tests para la función resolve_collision."""
@@ -430,6 +445,7 @@ class TestResolveCollision(unittest.TestCase):
 # Tests: normalización del fabricante
 # ---------------------------------------------------------------------------
 
+
 class TestBuildResult(unittest.TestCase):
     """Tests para la función _build_result (normalización de make y fecha)."""
 
@@ -463,6 +479,7 @@ class TestBuildResult(unittest.TestCase):
 # Tests: formato de bytes
 # ---------------------------------------------------------------------------
 
+
 class TestFormatBytes(unittest.TestCase):
     """Tests para la función _format_bytes."""
 
@@ -476,12 +493,13 @@ class TestFormatBytes(unittest.TestCase):
         self.assertEqual(pi._format_bytes(1024 * 1024), "1.0 MB")
 
     def test_gigabytes(self):
-        self.assertEqual(pi._format_bytes(64 * 1024 ** 3), "64.0 GB")
+        self.assertEqual(pi._format_bytes(64 * 1024**3), "64.0 GB")
 
 
 # ---------------------------------------------------------------------------
 # Tests: escaneo de volumen (con sistema de archivos temporal)
 # ---------------------------------------------------------------------------
+
 
 class TestScanVolume(unittest.TestCase):
     """Tests de integración para scan_volume con un volumen simulado."""
@@ -550,6 +568,7 @@ class TestScanVolume(unittest.TestCase):
 # Tests: copia de fotos (integración)
 # ---------------------------------------------------------------------------
 
+
 class TestCopyPhotos(unittest.TestCase):
     """Tests de integración para copy_photos."""
 
@@ -561,7 +580,9 @@ class TestCopyPhotos(unittest.TestCase):
         shutil.rmtree(self.src_tmp, ignore_errors=True)
         shutil.rmtree(self.dst_tmp, ignore_errors=True)
 
-    def _photo(self, name: str, make: str, date: datetime, category: str) -> pi.PhotoInfo:
+    def _photo(
+        self, name: str, make: str, date: datetime, category: str
+    ) -> pi.PhotoInfo:
         p = self.src_tmp / name
         p.write_bytes(b"fake photo content " + name.encode())
         return pi.PhotoInfo(path=p, date=date, make=make, category=category)
@@ -605,10 +626,13 @@ if __name__ == "__main__":
 # Tests: agrupamiento por fecha
 # ---------------------------------------------------------------------------
 
+
 class TestGroupByDate(unittest.TestCase):
     """Tests para la función _group_by_date."""
 
-    def _photo(self, year: int, month: int, day: int, make: str = "SONY") -> pi.PhotoInfo:
+    def _photo(
+        self, year: int, month: int, day: int, make: str = "SONY"
+    ) -> pi.PhotoInfo:
         return pi.PhotoInfo(
             path=Path(f"/sd/{year}{month:02d}{day:02d}.jpg"),
             date=datetime(year, month, day, 10, 0, 0),
@@ -635,12 +659,20 @@ class TestGroupByDate(unittest.TestCase):
         self.assertEqual(len(groups[2025]["01-11"]), 1)
 
     def test_sorted_years(self):
-        photos = [self._photo(2026, 1, 1), self._photo(2024, 1, 1), self._photo(2025, 1, 1)]
+        photos = [
+            self._photo(2026, 1, 1),
+            self._photo(2024, 1, 1),
+            self._photo(2025, 1, 1),
+        ]
         groups = pi._group_by_date(photos)
         self.assertEqual(list(groups.keys()), [2024, 2025, 2026])
 
     def test_sorted_days_within_year(self):
-        photos = [self._photo(2025, 3, 15), self._photo(2025, 1, 5), self._photo(2025, 2, 20)]
+        photos = [
+            self._photo(2025, 3, 15),
+            self._photo(2025, 1, 5),
+            self._photo(2025, 2, 20),
+        ]
         groups = pi._group_by_date(photos)
         days = list(groups[2025].keys())
         self.assertEqual(days, sorted(days))
@@ -652,6 +684,7 @@ class TestGroupByDate(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Tests: selector interactivo de fotos
 # ---------------------------------------------------------------------------
+
 
 class TestSelectPhotos(unittest.TestCase):
     """
@@ -667,12 +700,12 @@ class TestSelectPhotos(unittest.TestCase):
         """Crea un conjunto de fotos de prueba con 3 días distintos en 2 años."""
         base = [
             # 2025
-            pi.PhotoInfo(Path("/sd/a.jpg"), datetime(2025, 1, 10), "SONY",     "SOOC"),
-            pi.PhotoInfo(Path("/sd/b.arw"), datetime(2025, 1, 10), "SONY",     "RAW"),
+            pi.PhotoInfo(Path("/sd/a.jpg"), datetime(2025, 1, 10), "SONY", "SOOC"),
+            pi.PhotoInfo(Path("/sd/b.arw"), datetime(2025, 1, 10), "SONY", "RAW"),
             pi.PhotoInfo(Path("/sd/c.jpg"), datetime(2025, 6, 20), "FUJIFILM", "SOOC"),
             # 2026
-            pi.PhotoInfo(Path("/sd/d.jpg"), datetime(2026, 3,  8), "CANON",    "SOOC"),
-            pi.PhotoInfo(Path("/sd/e.cr3"), datetime(2026, 3,  8), "CANON",    "RAW"),
+            pi.PhotoInfo(Path("/sd/d.jpg"), datetime(2026, 3, 8), "CANON", "SOOC"),
+            pi.PhotoInfo(Path("/sd/e.cr3"), datetime(2026, 3, 8), "CANON", "RAW"),
         ]
         return base
 
@@ -728,7 +761,7 @@ class TestSelectPhotos(unittest.TestCase):
         Choice es solo "MM-DD" y puede aparecer en ambos).
         """
         photos = [
-            pi.PhotoInfo(Path("/sd/x.jpg"), datetime(2025, 3, 8), "SONY",  "SOOC"),
+            pi.PhotoInfo(Path("/sd/x.jpg"), datetime(2025, 3, 8), "SONY", "SOOC"),
             pi.PhotoInfo(Path("/sd/y.jpg"), datetime(2026, 3, 8), "CANON", "SOOC"),
         ]
         with patch("questionary.checkbox") as mock_cb:

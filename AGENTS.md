@@ -1,4 +1,4 @@
-# AGENTS.md — photo_importer
+# AGENTS.md — piximport
 
 Guía para agentes de IA (Copilot, Claude, Cursor, etc.) que trabajen en este repositorio.
 
@@ -6,7 +6,7 @@ Guía para agentes de IA (Copilot, Claude, Cursor, etc.) que trabajen en este re
 
 ## Propósito del proyecto
 
-`photo_importer` es una herramienta CLI en Python 3.11 que importa fotos desde
+`piximport` es una herramienta CLI en Python 3.11 que importa fotos desde
 tarjetas SD a `~/Pictures`, organizándolas automáticamente por fecha EXIF y
 fabricante de cámara. La única dependencia externa es `questionary` (selector
 interactivo en terminal).
@@ -16,16 +16,16 @@ interactivo en terminal).
 ## Estructura del repositorio
 
 ```
-photo_importer/
+piximport/
 ├── src/
-│   └── photo_importer/
+│   └── piximport/
 │       ├── __init__.py     # Script principal (todo el código de producción)
-│       └── __main__.py     # Permite `python -m photo_importer`
+│       └── __main__.py     # Permite `python -m piximport`
 ├── tests.py                # Tests unitarios con unittest (stdlib)
 ├── pyproject.toml          # Metadatos del paquete y entry point CLI
 ├── requirements.txt        # Dependencias pinadas para el entorno de desarrollo
 ├── Formula/
-│   └── photo-importer.rb   # Fórmula Homebrew (requiere actualizar sha256)
+│   └── piximport.rb        # Fórmula Homebrew (requiere actualizar sha256)
 ├── README.md
 ├── .gitignore
 └── AGENTS.md               # Este archivo
@@ -50,7 +50,7 @@ photo_importer/
 
 ---
 
-## Estructura del módulo principal (`src/photo_importer/__init__.py`)
+## Estructura del módulo principal (`src/piximport/__init__.py`)
 
 El script está organizado en secciones bien delimitadas con comentarios de
 separación. Al modificarlo, respetar este orden:
@@ -135,7 +135,7 @@ env/bin/python3.11 -m unittest tests -v
 python3.11 -m venv env
 source env/bin/activate
 pip install -e .
-photo-importer          # comando disponible globalmente en el venv
+piximport          # comando disponible globalmente en el venv
 ```
 
 ### Distribución con pip / PyPI
@@ -143,33 +143,36 @@ photo-importer          # comando disponible globalmente en el venv
 ```bash
 pip install build
 python -m build         # genera dist/*.whl y dist/*.tar.gz
-pip install dist/photo_importer-*.whl
+pip install dist/piximport-*.whl
 ```
 
 ### Distribución con pipx (recomendado para usuarios finales)
 
 ```bash
-pipx install photo-importer   # instala en env aislado, expone el comando
-pipx upgrade photo-importer
-pipx uninstall photo-importer
+pipx install piximport        # instala en env aislado, expone el comando
+pipx upgrade piximport
+pipx uninstall piximport
+
+# O directamente desde GitHub:
+pipx install git+https://github.com/suarez605/piximport.git@v1.0.0
 ```
 
 ### Distribución con Homebrew
 
-La fórmula está en `Formula/photo-importer.rb`. Para publicarla:
+La fórmula está en `Formula/piximport.rb`. Para publicarla:
 
 1. Crear un release en GitHub con un tarball (`git tag v1.0.0 && git push --tags`).
 2. Calcular el sha256 del tarball:
    ```bash
-   curl -sL https://github.com/<user>/photo-importer/archive/refs/tags/v1.0.0.tar.gz \
+   curl -sL https://github.com/suarez605/piximport/archive/refs/tags/v1.0.0.tar.gz \
      | shasum -a 256
    ```
 3. Actualizar los campos `sha256` en la fórmula (paquete principal y recursos).
 4. Crear un Homebrew tap:
    ```bash
-   brew tap-new <user>/tap
-   cp Formula/photo-importer.rb $(brew --repository <user>/tap)/Formula/
-   brew install <user>/tap/photo-importer
+   brew tap-new suarez605/tap
+   cp Formula/piximport.rb $(brew --repository suarez605/tap)/Formula/
+   brew install suarez605/tap/piximport
    ```
 
 ---
