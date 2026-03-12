@@ -179,15 +179,18 @@ def display_volume_menu(volumes: list[Path]) -> Path | None:
         )
         for vol in volumes
     ]
-    choices.append(Choice(title="Exit", value=None))
+    _EXIT = object()
+    choices.append(Choice(title="Exit", value=_EXIT))
 
     selected = questionary.select(
         "Select the volume to import:",
         choices=choices,
     ).ask()
 
-    if selected is not None:
-        print(f"\n  Selected volume: {selected.name} ({selected})\n")
+    if selected is None or selected is _EXIT:
+        return None
+
+    print(f"\n  Selected volume: {selected.name} ({selected})\n")
     return selected
 
 
