@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "photo-importer"
+version = "1.0.0"
+description = "CLI to import photos from SD cards into ~/Pictures, organised by date and camera make"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["photography", "import", "sd-card", "exif", "cli"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: MacOS",
+    "Topic :: Multimedia :: Graphics",
+]
+dependencies = [
+    "questionary>=2.1.1",
+]
+
+[project.scripts]
+# After `pip install .` or `brew install`, this command becomes available globally
+photo-importer = "photo_importer:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

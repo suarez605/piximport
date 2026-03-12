@@ -7,8 +7,9 @@ Guía para agentes de IA (Copilot, Claude, Cursor, etc.) que trabajen en este re
 ## Propósito del proyecto
 
 `photo_importer` es una herramienta CLI en Python 3.11 que importa fotos desde
-tarjetas SD a `~/Pictures`, organizándolas automáticamente por fecha y fabricante
-de cámara. No tiene dependencias externas: usa únicamente la biblioteca estándar.
+tarjetas SD a `~/Pictures`, organizándolas automáticamente por fecha EXIF y
+fabricante de cámara. La única dependencia externa es `questionary` (selector
+interactivo en terminal).
 
 ---
 
@@ -16,10 +17,18 @@ de cámara. No tiene dependencias externas: usa únicamente la biblioteca están
 
 ```
 photo_importer/
-├── photo_importer.py   # Script principal (único módulo de producción)
-├── tests.py            # Tests unitarios con unittest (stdlib)
+├── src/
+│   └── photo_importer/
+│       ├── __init__.py     # Script principal (todo el código de producción)
+│       └── __main__.py     # Permite `python -m photo_importer`
+├── tests.py                # Tests unitarios con unittest (stdlib)
+├── pyproject.toml          # Metadatos del paquete y entry point CLI
+├── requirements.txt        # Dependencias pinadas para el entorno de desarrollo
+├── Formula/
+│   └── photo-importer.rb   # Fórmula Homebrew (requiere actualizar sha256)
+├── README.md
 ├── .gitignore
-└── AGENTS.md           # Este archivo
+└── AGENTS.md               # Este archivo
 ```
 
 ---
@@ -27,8 +36,9 @@ photo_importer/
 ## Convenciones de código
 
 - **Python 3.11+** — usar type hints, `from __future__ import annotations`.
-- **Sin dependencias externas** — solo stdlib (`struct`, `pathlib`, `shutil`,
-  `subprocess`, `os`, `datetime`, `io`, `unittest`).
+- **Dependencias mínimas** — solo `questionary` como externa; el resto es stdlib
+  (`struct`, `pathlib`, `shutil`, `subprocess`, `os`, `datetime`, `io`,
+  `collections`, `unittest`).
 - **Funciones pequeñas y documentadas** — cada función pública tiene docstring
   con descripción, Args y Returns.
 - **Nombres en inglés** para variables, funciones y clases. Comentarios y
@@ -40,22 +50,23 @@ photo_importer/
 
 ---
 
-## Estructura del script principal
+## Estructura del módulo principal (`src/photo_importer/__init__.py`)
 
 El script está organizado en secciones bien delimitadas con comentarios de
 separación. Al modificarlo, respetar este orden:
 
 1. **Constantes globales** — extensiones, rutas, nombres especiales.
-2. **Tipos de datos** — `NamedTuple` usados en todo el script.
+2. **Tipos de datos** — `NamedTuple` usados en todo el módulo.
 3. **Detección de medios** — `list_external_volumes`, `display_volume_menu`.
 4. **Parser EXIF** — funciones privadas `_parse_*`, `_read_ifd`, `_build_result`,
    y la función pública `read_exif`.
 5. **Clasificación y escaneo** — `classify_file`, `scan_volume`, `_scan_dir`.
-6. **Rutas de destino** — `build_dest_path`, `_ensure_camera_subdirs`.
-7. **Colisiones** — `resolve_collision`.
-8. **Motor de copia** — `copy_photos`.
-9. **Resumen** — `print_summary`.
-10. **Punto de entrada** — `main`, bloque `if __name__ == "__main__"`.
+6. **Selector interactivo** — `_group_by_date`, `select_photos`.
+7. **Rutas de destino** — `build_dest_path`, `_ensure_camera_subdirs`.
+8. **Colisiones** — `resolve_collision`.
+9. **Motor de copia** — `copy_photos`.
+10. **Resumen** — `print_summary`.
+11. **Punto de entrada** — `main`, bloque `if __name__ == "__main__"`.
 
 ---
 
@@ -79,24 +90,87 @@ El parser EXIF es el componente más delicado. Al modificarlo:
 
 ---
 
+## Selector interactivo — reglas
+
+- `_group_by_date(photos)` devuelve `{año: {MM-DD: [PhotoInfo]}}` ordenado
+  cronológicamente.
+- `select_photos(photos)` usa `questionary.checkbox` con todos los días
+  pre-marcados. Cada ítem tiene valor `"MM-DD"` y muestra el año en el label.
+- Si el usuario cancela (Ctrl+C), `ask()` devuelve `None` → `select_photos`
+  devuelve `[]`.
+- El mismo `MM-DD` puede existir en distintos años; el filtrado combina
+  `(año, MM-DD)` para evitar falsos positivos.
+
+---
+
 ## Tests
 
 ```bash
-# Ejecutar todos los tests
-python3.11 tests.py
+# Con el entorno virtual activado:
+source env/bin/activate
+python -m unittest tests -v
 
-# Con salida verbose
-python3.11 -m unittest tests -v
+# O directamente:
+env/bin/python3.11 -m unittest tests -v
 ```
 
-- Los tests usan datos binarios sintéticos construidos con `struct` (no
-  requieren fotos reales).
+- Los tests de EXIF usan datos binarios sintéticos construidos con `struct`
+  (no requieren fotos reales).
+- Los tests de `select_photos` usan `unittest.mock.patch` sobre
+  `questionary.checkbox` para simular respuestas del usuario.
 - `_build_tiff_block()`, `_build_jpeg_with_exif()` y `_build_raf_with_exif()`
   son helpers en `tests.py` que generan bytes válidos para cada formato.
 - Al añadir soporte para un nuevo formato RAW, añadir también:
-  1. La extensión a `RAW_EXTENSIONS` en `photo_importer.py`.
+  1. La extensión a `RAW_EXTENSIONS` en `__init__.py`.
   2. Un test `test_raw_<ext>` en `TestClassifyFile`.
   3. Si el formato tiene cabecera propia, un test en una clase dedicada.
+
+---
+
+## Instalación y packaging
+
+### Desarrollo local
+
+```bash
+python3.11 -m venv env
+source env/bin/activate
+pip install -e .
+photo-importer          # comando disponible globalmente en el venv
+```
+
+### Distribución con pip / PyPI
+
+```bash
+pip install build
+python -m build         # genera dist/*.whl y dist/*.tar.gz
+pip install dist/photo_importer-*.whl
+```
+
+### Distribución con pipx (recomendado para usuarios finales)
+
+```bash
+pipx install photo-importer   # instala en env aislado, expone el comando
+pipx upgrade photo-importer
+pipx uninstall photo-importer
+```
+
+### Distribución con Homebrew
+
+La fórmula está en `Formula/photo-importer.rb`. Para publicarla:
+
+1. Crear un release en GitHub con un tarball (`git tag v1.0.0 && git push --tags`).
+2. Calcular el sha256 del tarball:
+   ```bash
+   curl -sL https://github.com/<user>/photo-importer/archive/refs/tags/v1.0.0.tar.gz \
+     | shasum -a 256
+   ```
+3. Actualizar los campos `sha256` en la fórmula (paquete principal y recursos).
+4. Crear un Homebrew tap:
+   ```bash
+   brew tap-new <user>/tap
+   cp Formula/photo-importer.rb $(brew --repository <user>/tap)/Formula/
+   brew install <user>/tap/photo-importer
+   ```
 
 ---
 
@@ -105,11 +179,13 @@ python3.11 -m unittest tests -v
 ```
 main()
   └── list_external_volumes()     → detecta /Volumes/* externos
-  └── display_volume_menu()       → menú numerado, devuelve Path o None
-  └── scan_volume()               → os.scandir recursivo → lista PhotoInfo
+  └── display_volume_menu()       → selector questionary, devuelve Path o None
+  └── scan_volume()               → os.scandir recursivo → lista PhotoInfo ordenada por fecha
         └── classify_file()       → extensión → "SOOC" | "RAW" | None
-        └── read_exif()           → (make, date) con fallbacks
-  └── copy_photos()               → itera PhotoInfo
+        └── read_exif()           → (make, date) con fallback a mtime
+  └── select_photos()             → checkbox por año/día, devuelve lista filtrada
+        └── _group_by_date()      → {año: {MM-DD: [PhotoInfo]}}
+  └── copy_photos()               → itera PhotoInfo seleccionados
         └── build_dest_path()     → crea dirs, devuelve Path destino
         └── resolve_collision()   → skip / rename con _N
         └── shutil.copy2()        → copia con metadatos del FS
@@ -127,13 +203,13 @@ Usar [Conventional Commits](https://www.conventionalcommits.org/):
 - `test:` añadir o corregir tests
 - `refactor:` refactoring sin cambio de comportamiento
 - `docs:` solo documentación
-- `chore:` tareas de mantenimiento (gitignore, CI, etc.)
+- `chore:` tareas de mantenimiento (gitignore, CI, packaging, etc.)
 
 ---
 
 ## Añadir soporte para un nuevo formato RAW
 
-1. Añadir la extensión (en minúsculas) a `RAW_EXTENSIONS` en `photo_importer.py`.
+1. Añadir la extensión (en minúsculas) a `RAW_EXTENSIONS` en `__init__.py`.
 2. Si el formato es TIFF-based, no requiere cambios en el parser (ya funciona).
 3. Si el formato tiene cabecera propia:
    - Añadir una rama en `read_exif()` con la nueva extensión.
