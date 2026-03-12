@@ -2,8 +2,8 @@ class PhotoImporter < Formula
   include Language::Python::Virtualenv
 
   desc "CLI to import photos from SD cards into ~/Pictures, organised by date and camera"
-  homepage "https://github.com/alvaromb/photo-importer"
-  url "https://github.com/alvaromb/photo-importer/archive/refs/tags/v1.0.0.tar.gz"
+  homepage "https://github.com/suarez605/photo-importer"
+  url "https://github.com/suarez605/photo-importer/archive/refs/tags/v1.0.0.tar.gz"
   # sha256 must be updated when the tarball changes:
   #   curl -sL <url> | shasum -a 256
   sha256 "PLACEHOLDER_UPDATE_WITH_REAL_SHA256"

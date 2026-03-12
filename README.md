@@ -32,7 +32,7 @@ pipx install photo-importer
 ### Con Homebrew (macOS)
 
 ```bash
-brew install alvaromb/tap/photo-importer
+brew install suarez605/tap/photo-importer
 ```
 
 ## Uso
@@ -60,7 +60,7 @@ los metadatos del sistema de ficheros.
 ## Desarrollo
 
 ```bash
-git clone https://github.com/alvaromb/photo-importer
+git clone https://github.com/suarez605/photo-importer
 cd photo-importer
 python3.11 -m venv env
 source env/bin/activate
