@@ -1,16 +1,16 @@
 #!/usr/bin/env python3.11
 """
-tests.py — Tests unitarios para piximport.
+tests.py — Unit tests for piximport.
 
-Cubre:
-    - Clasificación de archivos por extensión
-    - Parser EXIF: JPEG, TIFF-based RAW, RAF
-    - Construcción de rutas de destino
-    - Resolución de colisiones de nombre
-    - Normalización del fabricante
-    - Formato de bytes
+Covers:
+    - File classification by extension
+    - EXIF parser: JPEG, TIFF-based RAW, RAF
+    - Destination path building
+    - Filename collision resolution
+    - Camera make normalisation
+    - Byte formatting
 
-Ejecutar:
+Run:
     python3.11 tests.py
     python3.11 -m unittest tests -v
 """
@@ -27,17 +27,17 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-# Importar el módulo bajo prueba
+# Import the module under test
 import piximport as pi
 
 
 # ---------------------------------------------------------------------------
-# Helpers para construir bytes EXIF sintéticos
+# Helpers for building synthetic EXIF bytes
 # ---------------------------------------------------------------------------
 
 
 def _pack_ifd_entry(endian: str, tag: int, dtype: int, count: int, value: int) -> bytes:
-    """Empaqueta una entrada IFD de 12 bytes."""
+    """Packs a 12-byte IFD entry."""
     return struct.pack(f"{endian}HHII", tag, dtype, count, value)
 
 
@@ -47,36 +47,36 @@ def _build_tiff_block(
     endian: str = "<",
 ) -> bytes:
     """
-    Construye un bloque TIFF mínimo con los tags Make y DateTimeOriginal.
+    Builds a minimal TIFF block with Make and DateTimeOriginal tags.
 
-    Estructura:
-        - 8 bytes de cabecera TIFF (byte order + magic + offset IFD0)
-        - IFD0: num_entries(2) + entradas(12*n) + next_ifd(4)
-        - IFD EXIF: num_entries(2) + entradas(12*n) + next_ifd(4)
-        - Datos de cadenas (Make, Date)
+    Structure:
+        - 8-byte TIFF header (byte order + magic + IFD0 offset)
+        - IFD0: num_entries(2) + entries(12*n) + next_ifd(4)
+        - EXIF IFD: num_entries(2) + entries(12*n) + next_ifd(4)
+        - String data (Make, Date)
     """
-    # Las cadenas se almacenan al final del bloque
+    # Strings are stored at the end of the block
     make_bytes = make.encode("ascii") + b"\x00"
     date_bytes = date_str.encode("ascii") + b"\x00"
 
-    # Cabecera TIFF: 8 bytes
+    # TIFF header: 8 bytes
     # IFD0: 2 + 2*12 + 4 = 30 bytes → starts at offset 8
     # EXIF IFD: 2 + 1*12 + 4 = 18 bytes
     # Strings start after both IFDs
 
     ifd0_offset = 8
-    # IFD0 tiene 2 entries: Make (0x010F) y ExifIFD pointer (0x8769)
+    # IFD0 has 2 entries: Make (0x010F) and ExifIFD pointer (0x8769)
     ifd0_size = 2 + 2 * 12 + 4  # 30 bytes
     exif_ifd_offset = ifd0_offset + ifd0_size  # = 38
 
-    # EXIF IFD tiene 1 entry: DateTimeOriginal (0x9003)
+    # EXIF IFD has 1 entry: DateTimeOriginal (0x9003)
     exif_ifd_size = 2 + 1 * 12 + 4  # 18 bytes
     strings_offset = exif_ifd_offset + exif_ifd_size  # = 56
 
     make_offset = strings_offset
     date_offset = make_offset + len(make_bytes)
 
-    # Cabecera TIFF
+    # TIFF header
     bo_bytes = b"II" if endian == "<" else b"MM"
     header = bo_bytes + struct.pack(f"{endian}HI", 42, ifd0_offset)
 
@@ -100,33 +100,33 @@ def _build_tiff_block(
 
 def _build_jpeg_with_exif(make: str, date_str: str) -> bytes:
     """
-    Construye un JPEG mínimo con un segmento APP1 que contiene EXIF.
+    Builds a minimal JPEG with an APP1 segment containing EXIF data.
     """
     tiff_block = _build_tiff_block(make, date_str)
     exif_payload = b"Exif\x00\x00" + tiff_block
 
-    # APP1 segment: marker(2) + length(2, incluye los 2 bytes de longitud) + data
-    segment_length = len(exif_payload) + 2  # +2 por los bytes de longitud
+    # APP1 segment: marker(2) + length(2, includes the 2 length bytes) + data
+    segment_length = len(exif_payload) + 2  # +2 for the length bytes
     app1 = b"\xff\xe1" + struct.pack(">H", segment_length) + exif_payload
 
-    # SOI + APP1 + EOI (mínimo válido para el parser)
+    # SOI + APP1 + EOI (minimum valid for the parser)
     return b"\xff\xd8" + app1 + b"\xff\xd9"
 
 
 def _build_raf_with_exif(make: str, date_str: str) -> bytes:
     """
-    Construye un RAF mínimo con un JPEG embebido que contiene EXIF.
-    El parser RAF lee el JPEG desde el offset indicado en la cabecera.
+    Builds a minimal RAF file with an embedded JPEG containing EXIF data.
+    The RAF parser reads the JPEG from the offset specified in the header.
     """
-    # Cabecera RAF: 92 bytes (el parser lee hasta offset 0x58+4 = 92)
-    # El JPEG embebido empieza inmediatamente después de la cabecera
+    # RAF header: 92 bytes (the parser reads up to offset 0x58+4 = 92)
+    # The embedded JPEG starts immediately after the header
     jpeg_data = _build_jpeg_with_exif(make, date_str)
     jpeg_offset = 92  # JPEG starts right after the 92-byte header
     jpeg_length = len(jpeg_data)
 
     header = bytearray(92)
     header[0:16] = b"FUJIFILMCCD-RAW "
-    # El parser lee jpeg_offset desde offset 0x54 (84) y jpeg_length desde 0x58 (88)
+    # The parser reads jpeg_offset from offset 0x54 (84) and jpeg_length from 0x58 (88)
     struct.pack_into(">I", header, 0x54, jpeg_offset)
     struct.pack_into(">I", header, 0x58, jpeg_length)
 
@@ -134,12 +134,12 @@ def _build_raf_with_exif(make: str, date_str: str) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Tests: clasificación de archivos
+# Tests: file classification
 # ---------------------------------------------------------------------------
 
 
 class TestClassifyFile(unittest.TestCase):
-    """Tests para la función classify_file."""
+    """Tests for the classify_file function."""
 
     def test_sooc_jpg(self):
         self.assertEqual(pi.classify_file(Path("IMG_001.JPG")), "SOOC")
@@ -194,12 +194,12 @@ class TestClassifyFile(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: parser EXIF — JPEG
+# Tests: EXIF parser — JPEG
 # ---------------------------------------------------------------------------
 
 
 class TestExifParserJPEG(unittest.TestCase):
-    """Tests para el parser EXIF sobre archivos JPEG sintéticos."""
+    """Tests for the EXIF parser on synthetic JPEG files."""
 
     def _parse(self, jpeg_bytes: bytes) -> tuple[str, datetime | None]:
         return pi._parse_jpeg_exif(io.BytesIO(jpeg_bytes))
@@ -223,7 +223,7 @@ class TestExifParserJPEG(unittest.TestCase):
         self.assertEqual(make, "FUJIFILM")
 
     def test_make_with_trailing_comma(self):
-        """Algunos fabricantes incluyen comas en el tag Make."""
+        """Some manufacturers include commas in the Make tag."""
         data = _build_jpeg_with_exif("NIKON,", "2024:03:01 12:00:00")
         make, _ = self._parse(data)
         self.assertEqual(make, "NIKON")
@@ -234,7 +234,7 @@ class TestExifParserJPEG(unittest.TestCase):
         self.assertIsNone(date)
 
     def test_jpeg_no_exif(self):
-        """JPEG sin segmento APP1 EXIF."""
+        """JPEG with no APP1 EXIF segment."""
         # SOI + APP0 JFIF + EOI
         app0 = b"\xff\xe0" + struct.pack(">H", 16) + b"JFIF\x00" + b"\x00" * 9
         data = b"\xff\xd8" + app0 + b"\xff\xd9"
@@ -244,12 +244,12 @@ class TestExifParserJPEG(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: parser EXIF — TIFF-based RAW
+# Tests: EXIF parser — TIFF-based RAW
 # ---------------------------------------------------------------------------
 
 
 class TestExifParserTIFF(unittest.TestCase):
-    """Tests para el parser EXIF sobre bloques TIFF (ARW, NEF, etc.)."""
+    """Tests for the EXIF parser on TIFF blocks (ARW, NEF, etc.)."""
 
     def _parse_block(self, make: str, date_str: str, endian: str = "<"):
         block = _build_tiff_block(make, date_str, endian)
@@ -271,7 +271,7 @@ class TestExifParserTIFF(unittest.TestCase):
         self.assertEqual(date.day, 20)
 
     def test_invalid_magic(self):
-        """Bloque con magic number incorrecto."""
+        """Block with incorrect magic number."""
         bad_block = b"II" + struct.pack("<H", 99) + b"\x00" * 20
         make, date = pi._parse_tiff_block(bad_block)
         self.assertEqual(make, pi.UNKNOWN_CAMERA)
@@ -289,12 +289,12 @@ class TestExifParserTIFF(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: parser EXIF — RAF (Fujifilm)
+# Tests: EXIF parser — RAF (Fujifilm)
 # ---------------------------------------------------------------------------
 
 
 class TestExifParserRAF(unittest.TestCase):
-    """Tests para el parser RAF de Fujifilm."""
+    """Tests for the Fujifilm RAF parser."""
 
     def _parse(self, raf_bytes: bytes):
         return pi._parse_raf(io.BytesIO(raf_bytes))
@@ -325,12 +325,12 @@ class TestExifParserRAF(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: construcción de rutas de destino
+# Tests: destination path building
 # ---------------------------------------------------------------------------
 
 
 class TestBuildDestPath(unittest.TestCase):
-    """Tests para la función build_dest_path."""
+    """Tests for the build_dest_path function."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -376,12 +376,12 @@ class TestBuildDestPath(unittest.TestCase):
         self.assertEqual(dest.name, "IMG_0042.JPG")
 
     def test_camera_subdirs_created(self):
-        """Verifica que SOOC, RAW y EDITED se crean dentro del dir del fabricante."""
+        """Verifies that SOOC, RAW and EDITED are created inside the make directory."""
         photo = self._make_photo("CANON", datetime(2026, 2, 10), "SOOC", "IMG_001.JPG")
         pi.build_dest_path(photo, self.tmp)
         camera_dir = self.tmp / "2026" / "02-10" / "CANON"
         for subdir in ("SOOC", "RAW", "EDITED"):
-            self.assertTrue((camera_dir / subdir).is_dir(), f"Falta {subdir}")
+            self.assertTrue((camera_dir / subdir).is_dir(), f"Missing {subdir}")
 
     def test_unknown_camera_dir(self):
         photo = self._make_photo(
@@ -392,12 +392,12 @@ class TestBuildDestPath(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: resolución de colisiones
+# Tests: collision resolution
 # ---------------------------------------------------------------------------
 
 
 class TestResolveCollision(unittest.TestCase):
-    """Tests para la función resolve_collision."""
+    """Tests for the resolve_collision function."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -417,7 +417,7 @@ class TestResolveCollision(unittest.TestCase):
         self.assertEqual(result, dest)
 
     def test_same_size_treated_as_duplicate(self):
-        """Mismo tamaño → se devuelve la misma ruta (señal de duplicado)."""
+        """Same size → same path is returned (duplicate signal)."""
         content = b"same content"
         dest = self._write("IMG_001.JPG", content)
         source = self._write("source.jpg", content)
@@ -425,14 +425,14 @@ class TestResolveCollision(unittest.TestCase):
         self.assertEqual(result, dest)
 
     def test_different_size_gets_suffix(self):
-        """Distinto tamaño → nuevo nombre con sufijo _1."""
+        """Different size → new name with _1 suffix."""
         dest = self._write("IMG_001.JPG", b"old content longer")
         source = self._write("source.jpg", b"new")
         result = pi.resolve_collision(dest, source)
         self.assertEqual(result.name, "IMG_001_1.JPG")
 
     def test_multiple_collisions_increment(self):
-        """Si _1 también existe, debe probar _2, _3, etc."""
+        """If _1 also exists, should try _2, _3, etc."""
         self._write("IMG_001.JPG", b"old")
         self._write("IMG_001_1.JPG", b"also old")
         dest = self.tmp / "IMG_001.JPG"
@@ -442,12 +442,12 @@ class TestResolveCollision(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: normalización del fabricante
+# Tests: camera make normalisation
 # ---------------------------------------------------------------------------
 
 
 class TestBuildResult(unittest.TestCase):
-    """Tests para la función _build_result (normalización de make y fecha)."""
+    """Tests for the _build_result function (make and date normalisation)."""
 
     def test_make_uppercased(self):
         make, _ = pi._build_result("Nikon Corporation", None)
@@ -476,12 +476,12 @@ class TestBuildResult(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: formato de bytes
+# Tests: byte formatting
 # ---------------------------------------------------------------------------
 
 
 class TestFormatBytes(unittest.TestCase):
-    """Tests para la función _format_bytes."""
+    """Tests for the _format_bytes function."""
 
     def test_bytes(self):
         self.assertEqual(pi._format_bytes(500), "500.0 B")
@@ -497,12 +497,12 @@ class TestFormatBytes(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: escaneo de volumen (con sistema de archivos temporal)
+# Tests: volume scanning (with temporary filesystem)
 # ---------------------------------------------------------------------------
 
 
 class TestScanVolume(unittest.TestCase):
-    """Tests de integración para scan_volume con un volumen simulado."""
+    """Integration tests for scan_volume using a simulated volume."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -551,8 +551,8 @@ class TestScanVolume(unittest.TestCase):
         self.assertEqual(len(photos), 2)
 
     def test_fallback_date_from_mtime(self):
-        """Si no hay EXIF, la fecha debe venir del mtime del archivo."""
-        self._create_file("DCIM/noexif.jpg", b"\xff\xd8\xff\xd9")  # JPEG vacío
+        """If no EXIF is found, the date should come from the file's mtime."""
+        self._create_file("DCIM/noexif.jpg", b"\xff\xd8\xff\xd9")  # empty JPEG
         photos = pi.scan_volume(self.tmp)
         self.assertEqual(len(photos), 1)
         self.assertIsNotNone(photos[0].date)
@@ -565,12 +565,12 @@ class TestScanVolume(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: copia de fotos (integración)
+# Tests: photo copying (integration)
 # ---------------------------------------------------------------------------
 
 
 class TestCopyPhotos(unittest.TestCase):
-    """Tests de integración para copy_photos."""
+    """Integration tests for copy_photos."""
 
     def setUp(self):
         self.src_tmp = Path(tempfile.mkdtemp())
@@ -596,9 +596,9 @@ class TestCopyPhotos(unittest.TestCase):
 
     def test_duplicate_is_skipped(self):
         photo = self._photo("DSC00001.ARW", "SONY", datetime(2026, 1, 15), "RAW")
-        # Primera copia
+        # First copy
         pi.copy_photos([photo], self.dst_tmp)
-        # Segunda copia del mismo archivo
+        # Second copy of the same file
         result = pi.copy_photos([photo], self.dst_tmp)
         self.assertEqual(result.skipped, 1)
         self.assertEqual(result.copied, 0)
@@ -615,7 +615,7 @@ class TestCopyPhotos(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Punto de entrada
+# Entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -623,12 +623,12 @@ if __name__ == "__main__":
 
 
 # ---------------------------------------------------------------------------
-# Tests: agrupamiento por fecha
+# Tests: date grouping
 # ---------------------------------------------------------------------------
 
 
 class TestGroupByDate(unittest.TestCase):
-    """Tests para la función _group_by_date."""
+    """Tests for the _group_by_date function."""
 
     def _photo(
         self, year: int, month: int, day: int, make: str = "SONY"
@@ -682,22 +682,22 @@ class TestGroupByDate(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Tests: selector interactivo de fotos
+# Tests: interactive photo selector
 # ---------------------------------------------------------------------------
 
 
 class TestSelectPhotos(unittest.TestCase):
     """
-    Tests para select_photos(), simulando respuestas del usuario mediante
-    unittest.mock.patch sobre questionary.checkbox.
+    Tests for select_photos(), simulating user responses by patching
+    questionary.checkbox with unittest.mock.patch.
 
-    questionary.checkbox().ask() devuelve:
-    - lista de valores de las Choice marcadas → usuario confirmó
-    - None                                   → usuario canceló (Ctrl+C)
+    questionary.checkbox().ask() returns:
+    - list of values of checked Choices → user confirmed
+    - None                              → user cancelled (Ctrl+C)
     """
 
     def _make_photos(self) -> list[pi.PhotoInfo]:
-        """Crea un conjunto de fotos de prueba con 3 días distintos en 2 años."""
+        """Creates a set of test photos spanning 3 different days across 2 years."""
         base = [
             # 2025
             pi.PhotoInfo(Path("/sd/a.jpg"), datetime(2025, 1, 10), "SONY", "SOOC"),
@@ -710,19 +710,19 @@ class TestSelectPhotos(unittest.TestCase):
         return base
 
     def test_all_selected_returns_all(self):
-        """Cuando el usuario selecciona todos los días, vuelven todas las fotos."""
+        """When the user selects all days, all photos are returned."""
         photos = self._make_photos()
-        # Los valores de Choice son "MM-DD"
+        # Choice values are "MM-DD"
         with patch("questionary.checkbox") as mock_cb:
             mock_cb.return_value.ask.return_value = ["01-10", "06-20", "03-08"]
             result = pi.select_photos(photos)
         self.assertEqual(len(result), len(photos))
 
     def test_deselect_one_day(self):
-        """Desmarcar un día excluye solo las fotos de ese día."""
+        """Unchecking one day excludes only the photos from that day."""
         photos = self._make_photos()
         with patch("questionary.checkbox") as mock_cb:
-            # Excluir 2025/01-10 (2 fotos) → deben quedar 3
+            # Exclude 2025/01-10 (2 photos) → 3 should remain
             mock_cb.return_value.ask.return_value = ["06-20", "03-08"]
             result = pi.select_photos(photos)
         self.assertEqual(len(result), 3)
@@ -730,7 +730,7 @@ class TestSelectPhotos(unittest.TestCase):
         self.assertNotIn("01-10", dates)
 
     def test_deselect_entire_year_2025(self):
-        """Desmarcar todos los días de 2025 devuelve solo fotos de 2026."""
+        """Unchecking all 2025 days returns only 2026 photos."""
         photos = self._make_photos()
         with patch("questionary.checkbox") as mock_cb:
             mock_cb.return_value.ask.return_value = ["03-08"]
@@ -739,7 +739,7 @@ class TestSelectPhotos(unittest.TestCase):
         self.assertEqual(len(result), 2)
 
     def test_cancel_returns_empty(self):
-        """Ctrl+C (ask() devuelve None) → lista vacía."""
+        """Ctrl+C (ask() returns None) → empty list."""
         photos = self._make_photos()
         with patch("questionary.checkbox") as mock_cb:
             mock_cb.return_value.ask.return_value = None
@@ -747,7 +747,7 @@ class TestSelectPhotos(unittest.TestCase):
         self.assertEqual(result, [])
 
     def test_empty_selection_returns_empty(self):
-        """Selección vacía (ningún día marcado) → lista vacía."""
+        """Empty selection (no days checked) → empty list."""
         photos = self._make_photos()
         with patch("questionary.checkbox") as mock_cb:
             mock_cb.return_value.ask.return_value = []
@@ -756,9 +756,9 @@ class TestSelectPhotos(unittest.TestCase):
 
     def test_same_mmdd_in_different_years_disambiguated(self):
         """
-        Si existe el mismo MM-DD en dos años distintos y el usuario selecciona
-        ese valor, deben incluirse fotos de AMBOS años (ya que el valor de
-        Choice es solo "MM-DD" y puede aparecer en ambos).
+        If the same MM-DD exists in two different years and the user selects
+        that value, photos from BOTH years should be included (since the
+        Choice value is just "MM-DD" and can appear in both).
         """
         photos = [
             pi.PhotoInfo(Path("/sd/x.jpg"), datetime(2025, 3, 8), "SONY", "SOOC"),
@@ -767,5 +767,5 @@ class TestSelectPhotos(unittest.TestCase):
         with patch("questionary.checkbox") as mock_cb:
             mock_cb.return_value.ask.return_value = ["03-08"]
             result = pi.select_photos(photos)
-        # Ambas fotos tienen 03-08 aunque en distintos años → deben incluirse las dos
+        # Both photos have 03-08 but in different years → both should be included
         self.assertEqual(len(result), 2)

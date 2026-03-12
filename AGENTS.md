@@ -1,174 +1,171 @@
 # AGENTS.md — piximport
 
-Guía para agentes de IA (Copilot, Claude, Cursor, etc.) que trabajen en este repositorio.
+Guide for AI agents (Copilot, Claude, Cursor, etc.) working in this repository.
 
 ---
 
-## Propósito del proyecto
+## Project purpose
 
-`piximport` es una herramienta CLI en Python 3.11 que importa fotos desde
-tarjetas SD a `~/Pictures`, organizándolas automáticamente por fecha EXIF y
-fabricante de cámara. La única dependencia externa es `questionary` (selector
-interactivo en terminal).
+`piximport` is a Python 3.11 CLI tool that imports photos from SD cards to
+`~/Pictures`, automatically organising them by EXIF date and camera make.
+The only external dependency is `questionary` (interactive terminal selector).
 
 ---
 
-## Estructura del repositorio
+## Repository structure
 
 ```
 piximport/
 ├── src/
 │   └── piximport/
-│       ├── __init__.py     # Script principal (todo el código de producción)
-│       └── __main__.py     # Permite `python -m piximport`
-├── tests.py                # Tests unitarios con unittest (stdlib)
-├── pyproject.toml          # Metadatos del paquete y entry point CLI
-├── requirements.txt        # Dependencias pinadas para el entorno de desarrollo
+│       ├── __init__.py     # Main module (all production code)
+│       └── __main__.py     # Enables `python -m piximport`
+├── tests.py                # Unit tests using unittest (stdlib)
+├── pyproject.toml          # Package metadata and CLI entry point
+├── requirements.txt        # Pinned dependencies for the development environment
 ├── Formula/
-│   └── piximport.rb        # Fórmula Homebrew (requiere actualizar sha256)
+│   └── piximport.rb        # Homebrew formula (requires updating sha256)
 ├── README.md
 ├── .gitignore
-└── AGENTS.md               # Este archivo
+└── AGENTS.md               # This file
 ```
 
 ---
 
-## Convenciones de código
+## Code conventions
 
-- **Python 3.11+** — usar type hints, `from __future__ import annotations`.
-- **Dependencias mínimas** — solo `questionary` como externa; el resto es stdlib
+- **Python 3.11+** — use type hints, `from __future__ import annotations`.
+- **Minimal dependencies** — only `questionary` as external; the rest is stdlib
   (`struct`, `pathlib`, `shutil`, `subprocess`, `os`, `datetime`, `io`,
   `collections`, `unittest`).
-- **Funciones pequeñas y documentadas** — cada función pública tiene docstring
-  con descripción, Args y Returns.
-- **Nombres en inglés** para variables, funciones y clases. Comentarios y
-  docstrings pueden ser en español o inglés, pero deben ser consistentes
-  dentro de cada función.
-- **`frozenset` para conjuntos de extensiones** — inmutables y con O(1) lookup.
-- **`NamedTuple`** para estructuras de datos de solo lectura (`PhotoInfo`,
-  `CopyResult`).
+- **Small, documented functions** — every public function has a docstring
+  with a description, Args and Returns.
+- **English names** for variables, functions and classes. Comments and
+  docstrings must be in English and consistent within each function.
+- **`frozenset` for extension sets** — immutable with O(1) lookup.
+- **`NamedTuple`** for read-only data structures (`PhotoInfo`, `CopyResult`).
 
 ---
 
-## Estructura del módulo principal (`src/piximport/__init__.py`)
+## Main module structure (`src/piximport/__init__.py`)
 
-El script está organizado en secciones bien delimitadas con comentarios de
-separación. Al modificarlo, respetar este orden:
+The module is organised into clearly delimited sections with separator comments.
+When modifying it, respect this order:
 
-1. **Constantes globales** — extensiones, rutas, nombres especiales.
-2. **Tipos de datos** — `NamedTuple` usados en todo el módulo.
-3. **Detección de medios** — `list_external_volumes`, `display_volume_menu`.
-4. **Parser EXIF** — funciones privadas `_parse_*`, `_read_ifd`, `_build_result`,
-   y la función pública `read_exif`.
-5. **Clasificación y escaneo** — `classify_file`, `scan_volume`, `_scan_dir`.
-6. **Selector interactivo** — `_group_by_date`, `select_photos`.
-7. **Rutas de destino** — `build_dest_path`, `_ensure_camera_subdirs`.
-8. **Colisiones** — `resolve_collision`.
-9. **Motor de copia** — `copy_photos`.
-10. **Resumen** — `print_summary`.
-11. **Punto de entrada** — `main`, bloque `if __name__ == "__main__"`.
+1. **Global constants** — extensions, paths, special names.
+2. **Data types** — `NamedTuple` used throughout the module.
+3. **Media detection** — `list_external_volumes`, `display_volume_menu`.
+4. **EXIF parser** — private `_parse_*` functions, `_read_ifd`, `_build_result`,
+   and the public function `read_exif`.
+5. **Classification and scanning** — `classify_file`, `scan_volume`, `_scan_dir`.
+6. **Interactive selector** — `_group_by_date`, `select_photos`.
+7. **Destination paths** — `build_dest_path`, `_ensure_camera_subdirs`.
+8. **Collisions** — `resolve_collision`.
+9. **Copy engine** — `copy_photos`.
+10. **Summary** — `print_summary`.
+11. **Entry point** — `main`, `if __name__ == "__main__"` block.
 
 ---
 
-## Parser EXIF — reglas importantes
+## EXIF parser — important rules
 
-El parser EXIF es el componente más delicado. Al modificarlo:
+The EXIF parser is the most delicate component. When modifying it:
 
-- **JPEG**: busca el segmento APP1 (`0xFF 0xE1`) con el magic `"Exif\x00\x00"`.
-  Si el segmento es XMP u otro, debe continuar al siguiente segmento.
-- **TIFF-based** (ARW, NEF, CR2, CR3, DNG, ORF, RW2): leer los primeros 2 bytes
-  para determinar endianness (`II` = little-endian, `MM` = big-endian), verificar
-  magic 42, luego recorrer IFD0 y el EXIF IFD subyacente.
-- **RAF** (Fujifilm): leer 92 bytes de cabecera, verificar magic
-  `"FUJIFILMCCD-RAW "` (16 bytes), leer jpeg_offset desde `0x54` y
-  jpeg_length desde `0x58` (ambos big-endian uint32), luego parsear el JPEG
-  embebido con `_parse_jpeg_exif`.
-- Tags de interés: `Make = 0x010F`, `ExifIFD pointer = 0x8769`,
+- **JPEG**: look for the APP1 segment (`0xFF 0xE1`) with magic `"Exif\x00\x00"`.
+  If the segment is XMP or another type, continue to the next segment.
+- **TIFF-based** (ARW, NEF, CR2, CR3, DNG, ORF, RW2): read the first 2 bytes
+  to determine endianness (`II` = little-endian, `MM` = big-endian), verify
+  magic 42, then traverse IFD0 and the underlying EXIF IFD.
+- **RAF** (Fujifilm): read 92 header bytes, verify magic
+  `"FUJIFILMCCD-RAW "` (16 bytes), read jpeg_offset from `0x54` and
+  jpeg_length from `0x58` (both big-endian uint32), then parse the embedded
+  JPEG with `_parse_jpeg_exif`.
+- Tags of interest: `Make = 0x010F`, `ExifIFD pointer = 0x8769`,
   `DateTimeOriginal = 0x9003`.
-- **Nunca lanzar excepciones al llamador**: todo error en el parser devuelve
-  `(UNKNOWN_CAMERA, None)`. Las excepciones se capturan en `read_exif`.
+- **Never raise exceptions to the caller**: any parser error returns
+  `(UNKNOWN_CAMERA, None)`. Exceptions are caught in `read_exif`.
 
 ---
 
-## Selector interactivo — reglas
+## Interactive selector — rules
 
-- `_group_by_date(photos)` devuelve `{año: {MM-DD: [PhotoInfo]}}` ordenado
-  cronológicamente.
-- `select_photos(photos)` usa `questionary.checkbox` con todos los días
-  pre-marcados. Cada ítem tiene valor `"MM-DD"` y muestra el año en el label.
-- Si el usuario cancela (Ctrl+C), `ask()` devuelve `None` → `select_photos`
-  devuelve `[]`.
-- El mismo `MM-DD` puede existir en distintos años; el filtrado combina
-  `(año, MM-DD)` para evitar falsos positivos.
+- `_group_by_date(photos)` returns `{year: {MM-DD: [PhotoInfo]}}` sorted
+  chronologically.
+- `select_photos(photos)` uses `questionary.checkbox` with all days
+  pre-checked. Each item has value `"MM-DD"` and shows the year in the label.
+- If the user cancels (Ctrl+C), `ask()` returns `None` → `select_photos`
+  returns `[]`.
+- The same `MM-DD` can exist in different years; filtering combines
+  `(year, MM-DD)` to avoid false positives.
 
 ---
 
 ## Tests
 
 ```bash
-# Con el entorno virtual activado:
+# With the virtual environment activated:
 source env/bin/activate
 python -m unittest tests -v
 
-# O directamente:
+# Or directly:
 env/bin/python3.11 -m unittest tests -v
 ```
 
-- Los tests de EXIF usan datos binarios sintéticos construidos con `struct`
-  (no requieren fotos reales).
-- Los tests de `select_photos` usan `unittest.mock.patch` sobre
-  `questionary.checkbox` para simular respuestas del usuario.
-- `_build_tiff_block()`, `_build_jpeg_with_exif()` y `_build_raf_with_exif()`
-  son helpers en `tests.py` que generan bytes válidos para cada formato.
-- Al añadir soporte para un nuevo formato RAW, añadir también:
-  1. La extensión a `RAW_EXTENSIONS` en `__init__.py`.
-  2. Un test `test_raw_<ext>` en `TestClassifyFile`.
-  3. Si el formato tiene cabecera propia, un test en una clase dedicada.
+- EXIF tests use synthetic binary data built with `struct`
+  (no real photos required).
+- `select_photos` tests use `unittest.mock.patch` on
+  `questionary.checkbox` to simulate user responses.
+- `_build_tiff_block()`, `_build_jpeg_with_exif()` and `_build_raf_with_exif()`
+  are helpers in `tests.py` that generate valid bytes for each format.
+- When adding support for a new RAW format, also add:
+  1. The extension to `RAW_EXTENSIONS` in `__init__.py`.
+  2. A `test_raw_<ext>` test in `TestClassifyFile`.
+  3. If the format has its own header, a test in a dedicated class.
 
 ---
 
-## Instalación y packaging
+## Installation and packaging
 
-### Desarrollo local
+### Local development
 
 ```bash
 python3.11 -m venv env
 source env/bin/activate
 pip install -e .
-piximport          # comando disponible globalmente en el venv
+piximport          # command available globally in the venv
 ```
 
-### Distribución con pip / PyPI
+### Distribution with pip / PyPI
 
 ```bash
 pip install build
-python -m build         # genera dist/*.whl y dist/*.tar.gz
+python -m build         # generates dist/*.whl and dist/*.tar.gz
 pip install dist/piximport-*.whl
 ```
 
-### Distribución con pipx (recomendado para usuarios finales)
+### Distribution with pipx (recommended for end users)
 
 ```bash
-pipx install piximport        # instala en env aislado, expone el comando
+pipx install piximport        # installs in isolated env, exposes the command
 pipx upgrade piximport
 pipx uninstall piximport
 
-# O directamente desde GitHub:
+# Or directly from GitHub:
 pipx install git+https://github.com/suarez605/piximport.git@v1.0.0
 ```
 
-### Distribución con Homebrew
+### Distribution with Homebrew
 
-La fórmula está en `Formula/piximport.rb`. Para publicarla:
+The formula is in `Formula/piximport.rb`. To publish it:
 
-1. Crear un release en GitHub con un tarball (`git tag v1.0.0 && git push --tags`).
-2. Calcular el sha256 del tarball:
+1. Create a GitHub release with a tarball (`git tag v1.0.0 && git push --tags`).
+2. Calculate the tarball sha256:
    ```bash
    curl -sL https://github.com/suarez605/piximport/archive/refs/tags/v1.0.0.tar.gz \
      | shasum -a 256
    ```
-3. Actualizar los campos `sha256` en la fórmula (paquete principal y recursos).
-4. Crear un Homebrew tap:
+3. Update the `sha256` fields in the formula (main package and resources).
+4. Create a Homebrew tap:
    ```bash
    brew tap-new suarez605/tap
    cp Formula/piximport.rb $(brew --repository suarez605/tap)/Formula/
@@ -177,55 +174,55 @@ La fórmula está en `Formula/piximport.rb`. Para publicarla:
 
 ---
 
-## Flujo de la CLI
+## CLI flow
 
 ```
 main()
-  └── list_external_volumes()     → detecta /Volumes/* externos
-  └── display_volume_menu()       → selector questionary, devuelve Path o None
-  └── scan_volume()               → os.scandir recursivo → lista PhotoInfo ordenada por fecha
-        └── classify_file()       → extensión → "SOOC" | "RAW" | None
-        └── read_exif()           → (make, date) con fallback a mtime
-  └── select_photos()             → checkbox por año/día, devuelve lista filtrada
-        └── _group_by_date()      → {año: {MM-DD: [PhotoInfo]}}
-  └── copy_photos()               → itera PhotoInfo seleccionados
-        └── build_dest_path()     → crea dirs, devuelve Path destino
-        └── resolve_collision()   → skip / rename con _N
-        └── shutil.copy2()        → copia con metadatos del FS
-  └── print_summary()             → tabla de estadísticas
+  └── list_external_volumes()     → detects external /Volumes/*
+  └── display_volume_menu()       → questionary selector, returns Path or None
+  └── scan_volume()               → recursive os.scandir → sorted PhotoInfo list
+        └── classify_file()       → extension → "SOOC" | "RAW" | None
+        └── read_exif()           → (make, date) with mtime fallback
+  └── select_photos()             → checkbox by year/day, returns filtered list
+        └── _group_by_date()      → {year: {MM-DD: [PhotoInfo]}}
+  └── copy_photos()               → iterates selected PhotoInfo
+        └── build_dest_path()     → creates dirs, returns destination Path
+        └── resolve_collision()   → skip / rename with _N
+        └── shutil.copy2()        → copy with filesystem metadata
+  └── print_summary()             → statistics table
 ```
 
 ---
 
-## Convenciones de commits
+## Commit conventions
 
-Usar [Conventional Commits](https://www.conventionalcommits.org/):
+Use [Conventional Commits](https://www.conventionalcommits.org/):
 
-- `feat:` nueva funcionalidad
-- `fix:` corrección de bug
-- `test:` añadir o corregir tests
-- `refactor:` refactoring sin cambio de comportamiento
-- `docs:` solo documentación
-- `chore:` tareas de mantenimiento (gitignore, CI, packaging, etc.)
-
----
-
-## Añadir soporte para un nuevo formato RAW
-
-1. Añadir la extensión (en minúsculas) a `RAW_EXTENSIONS` en `__init__.py`.
-2. Si el formato es TIFF-based, no requiere cambios en el parser (ya funciona).
-3. Si el formato tiene cabecera propia:
-   - Añadir una rama en `read_exif()` con la nueva extensión.
-   - Implementar `_parse_<formato>(fh)` siguiendo el patrón de `_parse_raf`.
-   - Añadir tests en `tests.py`.
+- `feat:` new feature
+- `fix:` bug fix
+- `test:` add or fix tests
+- `refactor:` refactoring with no behaviour change
+- `docs:` documentation only
+- `chore:` maintenance tasks (gitignore, CI, packaging, etc.)
 
 ---
 
-## Añadir soporte para vídeos o sidecar files
+## Adding support for a new RAW format
 
-Actualmente el script ignora todo lo que no sea SOOC o RAW. Para añadir vídeos:
+1. Add the extension (lowercase) to `RAW_EXTENSIONS` in `__init__.py`.
+2. If the format is TIFF-based, no parser changes are needed (already works).
+3. If the format has its own header:
+   - Add a branch in `read_exif()` for the new extension.
+   - Implement `_parse_<format>(fh)` following the pattern of `_parse_raf`.
+   - Add tests in `tests.py`.
 
-1. Añadir las extensiones a un nuevo conjunto `VIDEO_EXTENSIONS`.
-2. Actualizar `classify_file()` para devolver `"VIDEO"`.
-3. Actualizar `CAMERA_SUBDIRS` si se quiere una subcarpeta dedicada.
-4. Añadir tests correspondientes.
+---
+
+## Adding support for videos or sidecar files
+
+Currently the tool ignores everything that is not SOOC or RAW. To add videos:
+
+1. Add the extensions to a new `VIDEO_EXTENSIONS` set.
+2. Update `classify_file()` to return `"VIDEO"`.
+3. Update `CAMERA_SUBDIRS` if a dedicated subfolder is wanted.
+4. Add corresponding tests.

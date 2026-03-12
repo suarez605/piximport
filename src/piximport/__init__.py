@@ -1,22 +1,22 @@
 #!/usr/bin/env python3.11
 """
-piximport — CLI para importar fotos desde tarjetas SD a ~/Pictures.
+piximport — CLI tool to import photos from SD cards to ~/Pictures.
 
-Estructura de destino:
-    ~/Pictures/<AÑO>/<MM-DD>/<FABRICANTE>/<SOOC|RAW|EDITED>/
+Destination structure:
+    ~/Pictures/<YEAR>/<MM-DD>/<MAKE>/<SOOC|RAW|EDITED>/
 
-    El año y la fecha provienen de los metadatos EXIF de cada foto
-    (DateTimeOriginal). Si no hay EXIF, se usa la fecha de modificación
-    del archivo como fallback.
+    The year and date come from each photo's EXIF metadata
+    (DateTimeOriginal). If no EXIF is found, the file's modification
+    time is used as a fallback.
 
-Tipos de archivo soportados:
+Supported file types:
     SOOC  : .jpg .jpeg .heif .heic .hif
     RAW   : .arw .raf .nef .cr2 .cr3 .dng .orf .rw2
 
-Uso:
+Usage:
     python3.11 -m piximport
 
-Requisitos:
+Requirements:
     Python 3.11+
     questionary  (pip install questionary)
 """
@@ -37,46 +37,46 @@ import questionary
 from questionary import Choice
 
 # ---------------------------------------------------------------------------
-# Constantes globales
+# Global constants
 # ---------------------------------------------------------------------------
 
 PICTURES_ROOT = Path.home() / "Pictures"
 
-# Extensiones clasificadas (en minúsculas)
+# Classified extensions (lowercase)
 SOOC_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".heif", ".heic", ".hif"})
 RAW_EXTENSIONS: frozenset[str] = frozenset(
     {".arw", ".raf", ".nef", ".cr2", ".cr3", ".dng", ".orf", ".rw2"}
 )
 ALL_EXTENSIONS: frozenset[str] = SOOC_EXTENSIONS | RAW_EXTENSIONS
 
-# Nombre de la subcarpeta cuando no se puede determinar el fabricante
+# Subfolder name used when the camera make cannot be determined
 UNKNOWN_CAMERA = "NO_CAMERA"
 
-# Subcarpetas que se crean siempre dentro de cada directorio de fabricante
+# Subfolders always created inside each camera make directory
 CAMERA_SUBDIRS = ("SOOC", "RAW", "EDITED")
 
-# Volúmenes del sistema que se excluyen del menú de selección
+# System volumes excluded from the selection menu
 SYSTEM_VOLUMES: frozenset[str] = frozenset(
     {"Macintosh HD", "Data", "Preboot", "Recovery", "VM"}
 )
 
 
 # ---------------------------------------------------------------------------
-# Tipos de datos
+# Data types
 # ---------------------------------------------------------------------------
 
 
 class PhotoInfo(NamedTuple):
-    """Metadatos extraídos de una foto durante el escaneo."""
+    """Metadata extracted from a photo during the scan."""
 
-    path: Path  # Ruta absoluta al archivo original en la SD
-    date: datetime  # Fecha de captura (EXIF) o de modificación (fallback)
-    make: str  # Fabricante de la cámara, ej: "SONY", "FUJIFILM"
-    category: str  # "SOOC" o "RAW"
+    path: Path  # Absolute path to the original file on the SD card
+    date: datetime  # Capture date (EXIF) or modification date (fallback)
+    make: str  # Camera manufacturer, e.g. "SONY", "FUJIFILM"
+    category: str  # "SOOC" or "RAW"
 
 
 class CopyResult(NamedTuple):
-    """Estadísticas del proceso de copia."""
+    """Statistics from the copy process."""
 
     copied: int
     skipped: int
@@ -84,21 +84,21 @@ class CopyResult(NamedTuple):
 
 
 # ---------------------------------------------------------------------------
-# Detección de medios externos (macOS)
+# External media detection (macOS)
 # ---------------------------------------------------------------------------
 
 
 def list_external_volumes() -> list[Path]:
     """
-    Devuelve una lista de rutas a volúmenes montados en /Volumes que no
-    pertenecen al sistema interno del Mac.
+    Returns a list of paths to volumes mounted under /Volumes that do not
+    belong to the Mac's internal system.
 
-    Usa `diskutil info` para identificar volúmenes internos/sistema y
-    excluirlos. Como fallback, filtra por nombres conocidos del sistema.
+    Uses `diskutil info` to identify internal/system volumes and exclude
+    them. Falls back to filtering by known system volume names.
 
     Returns:
-        Lista de Path a los puntos de montaje de volúmenes externos,
-        ordenados alfabéticamente.
+        List of Path objects pointing to external volume mount points,
+        sorted alphabetically.
     """
     volumes_root = Path("/Volumes")
     if not volumes_root.exists():
@@ -119,13 +119,13 @@ def list_external_volumes() -> list[Path]:
 
 def _is_internal_volume(mount_point: Path) -> bool:
     """
-    Consulta `diskutil info` para determinar si un volumen es interno.
+    Queries `diskutil info` to determine whether a volume is internal.
 
     Args:
-        mount_point: Ruta al punto de montaje del volumen.
+        mount_point: Path to the volume's mount point.
 
     Returns:
-        True si el volumen es interno o del sistema, False si es externo.
+        True if the volume is internal or a system volume, False if external.
     """
     try:
         result = subprocess.run(
@@ -149,22 +149,22 @@ def _is_internal_volume(mount_point: Path) -> bool:
 
 def display_volume_menu(volumes: list[Path]) -> Path | None:
     """
-    Muestra un menú interactivo con los volúmenes externos disponibles y
-    devuelve el elegido por el usuario.
+    Shows an interactive menu listing available external volumes and
+    returns the one chosen by the user.
 
     Args:
-        volumes: Lista de rutas a volúmenes externos.
+        volumes: List of paths to external volumes.
 
     Returns:
-        Path al volumen seleccionado, o None si el usuario cancela.
+        Path to the selected volume, or None if the user cancels.
     """
     print("\n╔══════════════════════════════════════════╗")
     print("║         PHOTO IMPORTER — SD Selector     ║")
     print("╚══════════════════════════════════════════╝\n")
 
     if not volumes:
-        print("  No se encontraron tarjetas SD ni volúmenes externos.")
-        print("  Conecta una tarjeta SD e intenta de nuevo.\n")
+        print("  No SD cards or external volumes found.")
+        print("  Connect an SD card and try again.\n")
         return None
 
     choices = [
@@ -174,27 +174,27 @@ def display_volume_menu(volumes: list[Path]) -> Path | None:
         )
         for vol in volumes
     ]
-    choices.append(Choice(title="Salir", value=None))
+    choices.append(Choice(title="Exit", value=None))
 
     selected = questionary.select(
-        "Selecciona el volumen a importar:",
+        "Select the volume to import:",
         choices=choices,
     ).ask()
 
     if selected is not None:
-        print(f"\n  Volumen seleccionado: {selected.name} ({selected})\n")
+        print(f"\n  Selected volume: {selected.name} ({selected})\n")
     return selected
 
 
 def _get_volume_size(path: Path) -> str:
     """
-    Devuelve el espacio total del volumen como cadena legible (ej: "64.0 GB").
+    Returns the total size of a volume as a human-readable string (e.g. "64.0 GB").
 
     Args:
-        path: Ruta al punto de montaje.
+        path: Path to the mount point.
 
     Returns:
-        Cadena con el tamaño formateado, o "" si no se puede obtener.
+        Formatted size string, or "" if it cannot be determined.
     """
     try:
         stat = os.statvfs(path)
@@ -204,7 +204,7 @@ def _get_volume_size(path: Path) -> str:
 
 
 def _format_bytes(n: int) -> str:
-    """Convierte bytes a cadena legible con la unidad apropiada (B → TB)."""
+    """Converts bytes to a human-readable string with the appropriate unit (B → TB)."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024:
             return f"{n:.1f} {unit}"
@@ -213,35 +213,35 @@ def _format_bytes(n: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Parser EXIF (sin dependencias externas)
+# EXIF parser (no external dependencies)
 # ---------------------------------------------------------------------------
 
-# Tags EXIF relevantes
-_TAG_MAKE = 0x010F  # IFD0: fabricante de la cámara
-_TAG_EXIF_IFD = 0x8769  # IFD0: puntero al IFD EXIF subyacente
-_TAG_DATE_ORIGINAL = 0x9003  # EXIF IFD: fecha y hora de captura original
+# Relevant EXIF tags
+_TAG_MAKE = 0x010F  # IFD0: camera manufacturer
+_TAG_EXIF_IFD = 0x8769  # IFD0: pointer to the EXIF sub-IFD
+_TAG_DATE_ORIGINAL = 0x9003  # EXIF IFD: original capture date and time
 
-# Formato estándar de fecha en EXIF: "YYYY:MM:DD HH:MM:SS"
+# Standard EXIF date format: "YYYY:MM:DD HH:MM:SS"
 _EXIF_DATE_FORMAT = "%Y:%m:%d %H:%M:%S"
 
 
 def read_exif(file_path: Path) -> tuple[str, datetime | None]:
     """
-    Extrae el fabricante de la cámara y la fecha de captura de un archivo
-    de imagen usando únicamente la biblioteca estándar de Python.
+    Extracts the camera make and capture date from an image file using
+    only the Python standard library.
 
-    Soporta:
-    - JPEG / HEIF / HIF  → busca segmento APP1 con bloque EXIF
+    Supports:
+    - JPEG / HEIF / HIF  → searches for APP1 segment with EXIF block
     - TIFF-based RAW     → ARW, NEF, CR2, CR3, DNG, ORF, RW2
-    - RAF (Fujifilm)     → lee el JPEG embebido en la cabecera RAF
+    - RAF (Fujifilm)     → reads the embedded JPEG in the RAF header
 
     Args:
-        file_path: Ruta al archivo de imagen.
+        file_path: Path to the image file.
 
     Returns:
-        Tupla (fabricante, fecha).
-        - fabricante es UNKNOWN_CAMERA si no se puede determinar.
-        - fecha es None si no hay EXIF (usar mtime como fallback externo).
+        Tuple (make, date).
+        - make is UNKNOWN_CAMERA if it cannot be determined.
+        - date is None if no EXIF is found (use mtime as external fallback).
     """
     suffix = file_path.suffix.lower()
     try:
@@ -251,7 +251,7 @@ def read_exif(file_path: Path) -> tuple[str, datetime | None]:
             elif suffix in (".jpg", ".jpeg", ".heif", ".heic", ".hif"):
                 return _parse_jpeg_exif(fh)
             else:
-                # ARW, NEF, CR2, CR3, DNG, ORF, RW2 — todos son TIFF-based
+                # ARW, NEF, CR2, CR3, DNG, ORF, RW2 — all are TIFF-based
                 return _parse_tiff_exif(fh)
     except (OSError, struct.error, ValueError, UnicodeDecodeError):
         return UNKNOWN_CAMERA, None
@@ -262,10 +262,10 @@ def read_exif(file_path: Path) -> tuple[str, datetime | None]:
 
 def _parse_jpeg_exif(fh) -> tuple[str, datetime | None]:
     """
-    Localiza el segmento APP1 con magic "Exif\\x00\\x00" en un stream JPEG
-    y delega el parsing al lector de bloques TIFF.
+    Locates the APP1 segment with magic "Exif\\x00\\x00" in a JPEG stream
+    and delegates parsing to the TIFF block reader.
 
-    Ignora otros segmentos APP1 (p.ej. XMP) y continúa buscando.
+    Ignores other APP1 segments (e.g. XMP) and continues searching.
     """
     if fh.read(2) != b"\xff\xd8":
         return UNKNOWN_CAMERA, None
@@ -280,13 +280,13 @@ def _parse_jpeg_exif(fh) -> tuple[str, datetime | None]:
             break
         seg_len = (
             struct.unpack(">H", raw_len)[0] - 2
-        )  # longitud excluye los 2 bytes propios
+        )  # length excludes the 2 length bytes themselves
 
         if marker[1] == 0xE1:  # APP1
             data = fh.read(seg_len)
             if data[:6] == b"Exif\x00\x00":
                 return _parse_tiff_block(data[6:])
-            # Otro APP1 (XMP, etc.) → seguir buscando
+            # Another APP1 (XMP, etc.) → keep searching
         else:
             fh.seek(seg_len, 1)
 
@@ -297,22 +297,22 @@ def _parse_jpeg_exif(fh) -> tuple[str, datetime | None]:
 
 
 def _parse_tiff_exif(fh) -> tuple[str, datetime | None]:
-    """Lee el archivo completo como bloque TIFF (para RAW TIFF-based)."""
+    """Reads the entire file as a TIFF block (for TIFF-based RAW formats)."""
     return _parse_tiff_block(fh.read())
 
 
 def _parse_tiff_block(data: bytes) -> tuple[str, datetime | None]:
     """
-    Parsea un bloque TIFF e extrae Make y DateTimeOriginal.
+    Parses a TIFF block and extracts Make and DateTimeOriginal.
 
-    Navega por IFD0 para encontrar el tag Make (0x010F) y el puntero al
-    EXIF IFD (0x8769), luego lee DateTimeOriginal (0x9003) del EXIF IFD.
+    Navigates IFD0 to find the Make tag (0x010F) and the EXIF IFD pointer
+    (0x8769), then reads DateTimeOriginal (0x9003) from the EXIF IFD.
 
     Args:
-        data: Bytes del bloque TIFF (debe comenzar con "II" o "MM").
+        data: Bytes of the TIFF block (must start with "II" or "MM").
 
     Returns:
-        Tupla (fabricante, fecha).
+        Tuple (make, date).
     """
     if len(data) < 8:
         return UNKNOWN_CAMERA, None
@@ -347,25 +347,25 @@ def _read_ifd(
     tags_wanted: set[int],
 ) -> tuple[str | None, int | None]:
     """
-    Lee un IFD TIFF y extrae los valores de los tags solicitados.
+    Reads a TIFF IFD and extracts the values of the requested tags.
 
-    Soporta tipos ASCII (2) y LONG (4). Solo extrae el primer tag ASCII
-    y el primer tag LONG encontrados entre los tags solicitados.
+    Supports ASCII (2) and LONG (4) types. Extracts only the first ASCII
+    tag and the first LONG tag found among the requested tags.
 
     Args:
-        data: Bytes del bloque TIFF completo.
-        offset: Posición de inicio del IFD dentro de data.
-        endian: "<" little-endian o ">" big-endian.
-        tags_wanted: Conjunto de IDs de tags a buscar.
+        data: Bytes of the full TIFF block.
+        offset: Start position of the IFD within data.
+        endian: "<" for little-endian or ">" for big-endian.
+        tags_wanted: Set of tag IDs to look for.
 
     Returns:
-        Tupla (valor_ascii_o_None, valor_long_o_None).
+        Tuple (ascii_value_or_None, long_value_or_None).
     """
     if offset + 2 > len(data):
         return None, None
 
     num_entries = struct.unpack_from(f"{endian}H", data, offset)[0]
-    if num_entries > 1000:  # sanity check contra datos corruptos
+    if num_entries > 1000:  # sanity check against corrupt data
         return None, None
 
     ascii_val: str | None = None
@@ -389,7 +389,7 @@ def _read_ifd(
                     raw.rstrip(b"\x00").decode("ascii", errors="replace").strip()
                 )
 
-            elif dtype == 4:  # LONG — puntero a sub-IFD
+            elif dtype == 4:  # LONG — pointer to a sub-IFD
                 long_val = value_or_offset
 
         pos += 12
@@ -401,17 +401,17 @@ def _build_result(
     make_raw: str | None, date_raw: str | None
 ) -> tuple[str, datetime | None]:
     """
-    Normaliza el fabricante y parsea la fecha extraídos del IFD.
+    Normalises the make and parses the date extracted from the IFD.
 
-    La normalización toma la primera palabra en mayúsculas y elimina
-    comas/puntos finales (algunos fabricantes los incluyen en el tag Make).
+    Normalisation takes the first word in uppercase and strips trailing
+    commas/periods (some manufacturers include them in the Make tag).
 
     Args:
-        make_raw: Valor bruto del tag Make, puede ser None.
-        date_raw: Valor bruto del tag DateTimeOriginal, puede ser None.
+        make_raw: Raw value of the Make tag, may be None.
+        date_raw: Raw value of the DateTimeOriginal tag, may be None.
 
     Returns:
-        Tupla (fabricante_normalizado, fecha_o_None).
+        Tuple (normalised_make, date_or_None).
     """
     if make_raw:
         make = make_raw.split()[0].upper().rstrip(",.")
@@ -433,22 +433,22 @@ def _build_result(
 
 def _parse_raf(fh) -> tuple[str, datetime | None]:
     """
-    Parsea archivos RAF de Fujifilm extrayendo el JPEG embebido.
+    Parses Fujifilm RAF files by extracting the embedded JPEG.
 
-    Estructura de la cabecera RAF (offsets big-endian):
+    RAF header structure (big-endian offsets):
         0x00  16 bytes  magic "FUJIFILMCCD-RAW "
-        0x10   4 bytes  versión del formato
-        0x14   8 bytes  número de cámara
-        0x1C  32 bytes  nombre del modelo
-        0x3C   4 bytes  versión de directorio
-        0x40  20 bytes  reservado
-        0x54   4 bytes  offset al JPEG embebido
-        0x58   4 bytes  longitud del JPEG embebido
+        0x10   4 bytes  format version
+        0x14   8 bytes  camera number
+        0x1C  32 bytes  model name
+        0x3C   4 bytes  directory version
+        0x40  20 bytes  reserved
+        0x54   4 bytes  offset to embedded JPEG
+        0x58   4 bytes  length of embedded JPEG
 
-    El EXIF se encuentra dentro del JPEG embebido, por lo que se redirige
-    el parsing a _parse_jpeg_exif().
+    The EXIF data lives inside the embedded JPEG, so parsing is
+    delegated to _parse_jpeg_exif().
     """
-    # 0x58 + 4 = 92 bytes mínimos para leer ambos campos
+    # 0x58 + 4 = 92 bytes minimum to read both fields
     header = fh.read(92)
     if len(header) < 92:
         return UNKNOWN_CAMERA, None
@@ -471,19 +471,19 @@ def _parse_raf(fh) -> tuple[str, datetime | None]:
 
 
 # ---------------------------------------------------------------------------
-# Clasificación y escaneo de archivos
+# File classification and volume scanning
 # ---------------------------------------------------------------------------
 
 
 def classify_file(path: Path) -> str | None:
     """
-    Determina la categoría de importación de un archivo según su extensión.
+    Determines the import category of a file based on its extension.
 
     Args:
-        path: Ruta al archivo (solo se examina la extensión).
+        path: Path to the file (only the extension is examined).
 
     Returns:
-        "SOOC" para JPEG/HEIF/HIF, "RAW" para formatos RAW, None si se ignora.
+        "SOOC" for JPEG/HEIF/HIF, "RAW" for RAW formats, None if ignored.
     """
     suffix = path.suffix.lower()
     if suffix in SOOC_EXTENSIONS:
@@ -495,35 +495,35 @@ def classify_file(path: Path) -> str | None:
 
 def scan_volume(volume: Path) -> list[PhotoInfo]:
     """
-    Escanea recursivamente un volumen y recopila los metadatos de todas
-    las fotos importables encontradas.
+    Recursively scans a volume and collects metadata for all importable
+    photos found.
 
-    Usa os.scandir en lugar de pathlib.rglob para mayor rendimiento en
-    volúmenes grandes con miles de archivos.
+    Uses os.scandir instead of pathlib.rglob for better performance on
+    large volumes with thousands of files.
 
     Args:
-        volume: Ruta raíz del volumen a escanear.
+        volume: Root path of the volume to scan.
 
     Returns:
-        Lista de PhotoInfo ordenada por fecha de captura (más antigua primero).
+        List of PhotoInfo sorted by capture date (oldest first).
     """
     photos: list[PhotoInfo] = []
-    print(f"  Escaneando {volume} ...")
+    print(f"  Scanning {volume} ...")
     _scan_dir(volume, photos)
     photos.sort(key=lambda p: p.date)
-    print(f"  {len(photos)} foto(s) encontrada(s).\n")
+    print(f"  {len(photos)} photo(s) found.\n")
     return photos
 
 
 def _scan_dir(directory: Path, results: list[PhotoInfo]) -> None:
     """
-    Escanea recursivamente un directorio acumulando fotos en results.
+    Recursively scans a directory, accumulating photos in results.
 
-    Ignora archivos y directorios que comiencen por "." (sistema/ocultos).
+    Ignores files and directories whose names start with "." (system/hidden).
 
     Args:
-        directory: Directorio a escanear.
-        results: Lista donde se acumulan los PhotoInfo encontrados.
+        directory: Directory to scan.
+        results: List where found PhotoInfo objects are accumulated.
     """
     try:
         with os.scandir(directory) as it:
@@ -540,7 +540,7 @@ def _scan_dir(directory: Path, results: list[PhotoInfo]) -> None:
 
                     make, date = read_exif(path)
 
-                    # Fallback de fecha: mtime del archivo en el sistema de ficheros
+                    # Date fallback: use the file's mtime from the filesystem
                     if date is None:
                         date = datetime.fromtimestamp(entry.stat().st_mtime)
 
@@ -552,51 +552,50 @@ def _scan_dir(directory: Path, results: list[PhotoInfo]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Selector interactivo de fotos
+# Interactive photo selector
 # ---------------------------------------------------------------------------
 
-# Tipo alias para el agrupamiento: año → {MM-DD → [PhotoInfo]}
+# Type alias for grouping: year → {MM-DD → [PhotoInfo]}
 _Groups = dict[int, dict[str, list[PhotoInfo]]]
 
 
 def _group_by_date(photos: list[PhotoInfo]) -> _Groups:
     """
-    Agrupa una lista de fotos por año y por fecha (MM-DD).
+    Groups a list of photos by year and date (MM-DD).
 
     Args:
-        photos: Lista de PhotoInfo a agrupar.
+        photos: List of PhotoInfo to group.
 
     Returns:
-        Diccionario {año: {MM-DD: [PhotoInfo, ...]}} ordenado cronológicamente.
+        Dictionary {year: {MM-DD: [PhotoInfo, ...]}} sorted chronologically.
     """
     groups: _Groups = defaultdict(lambda: defaultdict(list))
     for photo in photos:
         day_key = photo.date.strftime("%m-%d")
         groups[photo.date.year][day_key].append(photo)
-    # Convertir a dicts ordenados para iteración predecible
+    # Convert to sorted dicts for predictable iteration
     return {year: dict(sorted(days.items())) for year, days in sorted(groups.items())}
 
 
 def select_photos(photos: list[PhotoInfo]) -> list[PhotoInfo]:
     """
-    Muestra un selector interactivo de checkbox que permite al usuario
-    elegir qué días importar, agrupados por año.
+    Shows an interactive checkbox selector that lets the user choose
+    which days to import, grouped by year.
 
-    El selector muestra:
-    - Una entrada por cada año (como separador visual no seleccionable)
-    - Una entrada por cada día dentro de cada año, con conteo de fotos
-      y fabricantes presentes
+    The selector displays:
+    - One entry per year (as a non-selectable visual separator)
+    - One entry per day within each year, with a photo count
+      and the makes present on that day
 
-    El usuario puede marcar/desmarcar días individuales con Espacio, y
-    confirmar con Enter. Para desmarcar un año completo basta con
-    desmarcar todos sus días.
+    The user can check/uncheck individual days with Space and confirm
+    with Enter. To deselect an entire year, simply uncheck all its days.
 
     Args:
-        photos: Lista completa de fotos escaneadas.
+        photos: Full list of scanned photos.
 
     Returns:
-        Lista filtrada de PhotoInfo correspondiente a los días seleccionados.
-        Devuelve lista vacía si el usuario cancela (Ctrl+C).
+        Filtered list of PhotoInfo for the selected days.
+        Returns an empty list if the user cancels (Ctrl+C).
     """
     groups = _group_by_date(photos)
 
@@ -604,27 +603,29 @@ def select_photos(photos: list[PhotoInfo]) -> list[PhotoInfo]:
 
     for year, days in groups.items():
         year_total = sum(len(v) for v in days.values())
-        choices.append(questionary.Separator(f"\n  ── {year}  ({year_total} fotos) ──"))
+        choices.append(
+            questionary.Separator(f"\n  ── {year}  ({year_total} photos) ──")
+        )
 
         for day_key, day_photos in days.items():
             makes = sorted({p.make for p in day_photos})
             makes_str = ", ".join(makes)
             n = len(day_photos)
-            label = f"{year} / {day_key}  —  {n} foto{'s' if n != 1 else ''}   [{makes_str}]"
+            label = f"{year} / {day_key}  —  {n} photo{'s' if n != 1 else ''}   [{makes_str}]"
             choices.append(Choice(title=label, value=day_key, checked=True))
 
     print()
     selected_keys: list[str] | None = questionary.checkbox(
-        "Selecciona los días a importar  (Espacio = marcar/desmarcar, Enter = confirmar):",
+        "Select days to import  (Space = check/uncheck, Enter = confirm):",
         choices=choices,
     ).ask()
 
-    # ask() devuelve None si el usuario pulsa Ctrl+C
+    # ask() returns None if the user presses Ctrl+C
     if selected_keys is None:
         return []
 
-    # El valor de cada Choice es solo "MM-DD"; puede haber el mismo MM-DD en
-    # distintos años, así que filtramos por (año, MM-DD) combinados
+    # Each Choice value is just "MM-DD"; the same MM-DD can exist in
+    # different years, so we filter by combined (year, MM-DD)
     selected_set: set[tuple[int, str]] = set()
     for year, days in groups.items():
         for day_key in days:
@@ -637,27 +638,27 @@ def select_photos(photos: list[PhotoInfo]) -> list[PhotoInfo]:
 
 
 # ---------------------------------------------------------------------------
-# Construcción de rutas de destino
+# Destination path building
 # ---------------------------------------------------------------------------
 
 
 def build_dest_path(photo: PhotoInfo, dest_root: Path) -> Path:
     """
-    Construye la ruta de destino para una foto y crea los directorios
-    necesarios si no existen.
+    Builds the destination path for a photo and creates any required
+    directories if they do not already exist.
 
-    La estructura sigue el esquema:
-        <dest_root>/<AÑO>/<MM-DD>/<FABRICANTE>/<SOOC|RAW|EDITED>/
+    The structure follows this scheme:
+        <dest_root>/<YEAR>/<MM-DD>/<MAKE>/<SOOC|RAW|EDITED>/
 
-    El año y la fecha derivan exclusivamente de photo.date (fecha EXIF o
-    mtime), nunca de la fecha actual del sistema.
+    The year and date are derived exclusively from photo.date (EXIF date or
+    mtime), never from the current system date.
 
     Args:
-        photo: Metadatos de la foto.
-        dest_root: Carpeta raíz de destino (ej: ~/Pictures).
+        photo: Photo metadata.
+        dest_root: Root destination folder (e.g. ~/Pictures).
 
     Returns:
-        Path completo al archivo de destino (sin crear el archivo).
+        Full path to the destination file (the file itself is not created).
     """
     year_dir = str(photo.date.year)
     date_dir = photo.date.strftime("%m-%d")
@@ -666,7 +667,7 @@ def build_dest_path(photo: PhotoInfo, dest_root: Path) -> Path:
     dest_dir = dest_root / year_dir / date_dir / make_dir / photo.category
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    # Garantizar que SOOC, RAW y EDITED siempre existen como hermanos
+    # Ensure SOOC, RAW and EDITED always exist as siblings
     _ensure_camera_subdirs(dest_root / year_dir / date_dir / make_dir)
 
     return dest_dir / photo.path.name
@@ -674,44 +675,44 @@ def build_dest_path(photo: PhotoInfo, dest_root: Path) -> Path:
 
 def _ensure_camera_subdirs(camera_dir: Path) -> None:
     """
-    Crea las subcarpetas SOOC, RAW y EDITED dentro del directorio del
-    fabricante si aún no existen.
+    Creates the SOOC, RAW and EDITED subfolders inside the camera make
+    directory if they do not already exist.
 
     Args:
-        camera_dir: Directorio del fabricante (ej: ~/Pictures/2026/01-15/SONY).
+        camera_dir: Camera make directory (e.g. ~/Pictures/2026/01-15/SONY).
     """
     for subdir in CAMERA_SUBDIRS:
         (camera_dir / subdir).mkdir(exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
-# Manejo de colisiones de nombres
+# Filename collision handling
 # ---------------------------------------------------------------------------
 
 
 def resolve_collision(dest_path: Path, source_path: Path) -> Path:
     """
-    Resuelve colisiones de nombre de archivo en el destino.
+    Resolves filename collisions at the destination.
 
-    Estrategia:
-    1. Si el destino no existe → devolver dest_path tal cual.
-    2. Si el destino existe y tiene el mismo tamaño que la fuente →
-       asumir duplicado, devolver la misma ruta (el llamador lo saltará).
-    3. Si el destino existe con distinto tamaño → añadir sufijo numérico
-       (_1, _2, ...) hasta encontrar un nombre libre.
+    Strategy:
+    1. If the destination does not exist → return dest_path as-is.
+    2. If the destination exists and has the same size as the source →
+       assume duplicate, return the same path (the caller will skip it).
+    3. If the destination exists with a different size → append a numeric
+       suffix (_1, _2, ...) until a free name is found.
 
     Args:
-        dest_path:   Ruta de destino propuesta.
-        source_path: Ruta al archivo fuente.
+        dest_path:   Proposed destination path.
+        source_path: Path to the source file.
 
     Returns:
-        Ruta definitiva donde debe copiarse el archivo.
+        Final path where the file should be copied.
     """
     if not dest_path.exists():
         return dest_path
 
     if dest_path.stat().st_size == source_path.stat().st_size:
-        return dest_path  # Señal de duplicado para el llamador
+        return dest_path  # Duplicate signal for the caller
 
     stem, suffix, parent = dest_path.stem, dest_path.suffix, dest_path.parent
     counter = 1
@@ -723,26 +724,26 @@ def resolve_collision(dest_path: Path, source_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Motor de copia
+# Copy engine
 # ---------------------------------------------------------------------------
 
 
 def copy_photos(photos: list[PhotoInfo], dest_root: Path) -> CopyResult:
     """
-    Copia todas las fotos al árbol de destino mostrando progreso en tiempo real.
+    Copies all photos to the destination tree while showing real-time progress.
 
-    Para cada foto:
-    - Construye la ruta de destino con build_dest_path()
-    - Resuelve colisiones de nombre con resolve_collision()
-    - Si el archivo ya existe con el mismo tamaño, lo salta
-    - Si no, lo copia preservando metadatos del FS con shutil.copy2()
+    For each photo:
+    - Builds the destination path with build_dest_path()
+    - Resolves filename collisions with resolve_collision()
+    - If the file already exists with the same size, skips it
+    - Otherwise copies it, preserving filesystem metadata via shutil.copy2()
 
     Args:
-        photos:    Lista de fotos a copiar (ya filtrada por el selector).
-        dest_root: Carpeta raíz de destino (ej: ~/Pictures).
+        photos:    List of photos to copy (already filtered by the selector).
+        dest_root: Root destination folder (e.g. ~/Pictures).
 
     Returns:
-        CopyResult con el conteo de archivos copiados, saltados y errores.
+        CopyResult with the count of copied, skipped and errored files.
     """
     total = len(photos)
     copied = skipped = errors = 0
@@ -755,13 +756,13 @@ def copy_photos(photos: list[PhotoInfo], dest_root: Path) -> CopyResult:
             final = resolve_collision(proposed, photo.path)
 
             if final == proposed and proposed.exists():
-                print(f"{prefix} SALTAR  {photo.path.name}  (ya existe)")
+                print(f"{prefix} SKIP    {photo.path.name}  (already exists)")
                 skipped += 1
                 continue
 
             shutil.copy2(photo.path, final)
             print(
-                f"{prefix} COPIAR  {photo.path.name}  →  {final.relative_to(dest_root)}"
+                f"{prefix} COPY    {photo.path.name}  →  {final.relative_to(dest_root)}"
             )
             copied += 1
 
@@ -773,82 +774,82 @@ def copy_photos(photos: list[PhotoInfo], dest_root: Path) -> CopyResult:
 
 
 # ---------------------------------------------------------------------------
-# Resumen final
+# Final summary
 # ---------------------------------------------------------------------------
 
 
 def print_summary(result: CopyResult, dest_root: Path) -> None:
     """
-    Imprime una tabla con las estadísticas del proceso de importación.
+    Prints a table with statistics from the import process.
 
     Args:
-        result:    Estadísticas devueltas por copy_photos().
-        dest_root: Carpeta raíz de destino usada (para informar al usuario).
+        result:    Statistics returned by copy_photos().
+        dest_root: Root destination folder used (reported to the user).
     """
     total = result.copied + result.skipped + result.errors
     print("\n╔══════════════════════════════════════════╗")
-    print("║            Importación completada        ║")
+    print("║             Import complete              ║")
     print("╠══════════════════════════════════════════╣")
-    print(f"║  Total procesadas : {total:<22}║")
-    print(f"║  Copiadas         : {result.copied:<22}║")
-    print(f"║  Saltadas (dup.)  : {result.skipped:<22}║")
-    print(f"║  Errores          : {result.errors:<22}║")
-    print(f"║  Destino          : {str(dest_root):<22}║")
+    print(f"║  Total processed  : {total:<22}║")
+    print(f"║  Copied           : {result.copied:<22}║")
+    print(f"║  Skipped (dup.)   : {result.skipped:<22}║")
+    print(f"║  Errors           : {result.errors:<22}║")
+    print(f"║  Destination      : {str(dest_root):<22}║")
     print("╚══════════════════════════════════════════╝\n")
 
 
 # ---------------------------------------------------------------------------
-# Punto de entrada
+# Entry point
 # ---------------------------------------------------------------------------
 
 
 def main() -> int:
     """
-    Función principal del CLI. Orquesta el flujo completo:
-    detección → selección de volumen → escaneo → filtro de fechas → copia.
+    Main CLI function. Orchestrates the full workflow:
+    detection → volume selection → scan → date filter → copy.
 
     Returns:
-        Código de salida: 0 éxito, 1 sin fotos/cancelado, 2 errores de copia.
+        Exit code: 0 success, 1 no photos/cancelled, 2 copy errors.
     """
-    # 1. Detectar volúmenes externos
+    # 1. Detect external volumes
     volumes = list_external_volumes()
 
-    # 2. Menú de selección de volumen
+    # 2. Volume selection menu
     selected_volume = display_volume_menu(volumes)
     if selected_volume is None:
-        print("  Sin cambios. Hasta luego.\n")
+        print("  No changes. Goodbye.\n")
         return 0
 
-    # 3. Escanear el volumen (las fotos se ordenan por fecha EXIF)
+    # 3. Scan the volume (photos are sorted by EXIF date)
     photos = scan_volume(selected_volume)
     if not photos:
-        print("  No se encontraron fotos con formatos soportados en el volumen.\n")
+        print("  No photos with supported formats found on the volume.\n")
         return 1
 
-    # 4. Selector interactivo: el usuario elige qué días importar
+    # 4. Interactive selector: the user chooses which days to import
     photos = select_photos(photos)
     if not photos:
-        print("\n  Sin selección. No se copiará nada.\n")
+        print("\n  No selection. Nothing will be copied.\n")
         return 1
 
-    # 5. Confirmación final con conteo real de la selección
-    print(f"\n  {len(photos)} foto(s) seleccionadas → destino: {PICTURES_ROOT}\n")
+    # 5. Final confirmation with the actual selection count
+    print(f"\n  {len(photos)} photo(s) selected → destination: {PICTURES_ROOT}\n")
     try:
-        confirm = input("  ¿Continuar con la importación? [S/n]: ").strip().lower()
+        confirm = input("  Continue with import? [Y/n]: ").strip().lower()
     except (EOFError, KeyboardInterrupt):
-        print("\n  Cancelado.")
+        print("\n  Cancelled.")
         return 0
 
-    if confirm not in ("", "s", "si", "sí", "y", "yes"):
-        print("  Operación cancelada.\n")
+    if confirm not in ("", "y", "yes"):
+        print("  Operation cancelled.\n")
         return 0
 
     print()
 
-    # 6. Copiar fotos
+    # 6. Copy photos
     result = copy_photos(photos, PICTURES_ROOT)
 
-    # 7. Mostrar resumen
+    # 7. Show summary
     print_summary(result, PICTURES_ROOT)
 
     return 0 if result.errors == 0 else 2
