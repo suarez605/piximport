@@ -39,12 +39,6 @@ pipx install git+https://github.com/suarez605/piximport.git@v1.0.0
 pip install piximport
 ```
 
-### With Homebrew (macOS)
-
-```bash
-brew install suarez605/tap/piximport
-```
-
 ## Usage
 
 ```bash

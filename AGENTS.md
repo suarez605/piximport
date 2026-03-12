@@ -154,24 +154,6 @@ pipx uninstall piximport
 pipx install git+https://github.com/suarez605/piximport.git@v1.0.0
 ```
 
-### Distribution with Homebrew
-
-The formula is in `Formula/piximport.rb`. To publish it:
-
-1. Create a GitHub release with a tarball (`git tag v1.0.0 && git push --tags`).
-2. Calculate the tarball sha256:
-   ```bash
-   curl -sL https://github.com/suarez605/piximport/archive/refs/tags/v1.0.0.tar.gz \
-     | shasum -a 256
-   ```
-3. Update the `sha256` fields in the formula (main package and resources).
-4. Create a Homebrew tap:
-   ```bash
-   brew tap-new suarez605/tap
-   cp Formula/piximport.rb $(brew --repository suarez605/tap)/Formula/
-   brew install suarez605/tap/piximport
-   ```
-
 ---
 
 ## CLI flow
