@@ -1,17 +1,19 @@
 #!/usr/bin/env python3.11
 """
-piximport — CLI tool to import photos from SD cards to ~/Pictures.
+piximport — CLI tool to import photos and videos from SD cards to ~/Pictures.
 
 Destination structure:
-    ~/Pictures/<YEAR>/<MM-DD>/<MAKE>/<SOOC|RAW|EDITED>/
+    ~/Pictures/<YEAR>/<MM-DD>/<MAKE>/<SOOC|RAW|EDITED|VIDEO>/
 
     The year and date come from each photo's EXIF metadata
     (DateTimeOriginal). If no EXIF is found, the file's modification
-    time is used as a fallback.
+    time is used as a fallback. Videos always use the modification time
+    fallback as they do not carry EXIF metadata.
 
 Supported file types:
     SOOC  : .jpg .jpeg .heif .heic .hif
     RAW   : .arw .raf .nef .cr2 .cr3 .dng .orf .rw2
+    VIDEO : .mp4 .mov .mts .m2ts
 
 Usage:
     python3.11 -m piximport
@@ -47,13 +49,14 @@ SOOC_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".heif", ".heic", 
 RAW_EXTENSIONS: frozenset[str] = frozenset(
     {".arw", ".raf", ".nef", ".cr2", ".cr3", ".dng", ".orf", ".rw2"}
 )
-ALL_EXTENSIONS: frozenset[str] = SOOC_EXTENSIONS | RAW_EXTENSIONS
+VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov", ".mts", ".m2ts"})
+ALL_EXTENSIONS: frozenset[str] = SOOC_EXTENSIONS | RAW_EXTENSIONS | VIDEO_EXTENSIONS
 
 # Subfolder name used when the camera make cannot be determined
 UNKNOWN_CAMERA = "NO_CAMERA"
 
 # Subfolders always created inside each camera make directory
-CAMERA_SUBDIRS = ("SOOC", "RAW", "EDITED")
+CAMERA_SUBDIRS = ("SOOC", "RAW", "EDITED", "VIDEO")
 
 # System volumes excluded from the selection menu
 SYSTEM_VOLUMES: frozenset[str] = frozenset(
@@ -491,13 +494,16 @@ def classify_file(path: Path) -> str | None:
         path: Path to the file (only the extension is examined).
 
     Returns:
-        "SOOC" for JPEG/HEIF/HIF, "RAW" for RAW formats, None if ignored.
+        "SOOC" for JPEG/HEIF/HIF, "RAW" for RAW formats,
+        "VIDEO" for video formats, None if ignored.
     """
     suffix = path.suffix.lower()
     if suffix in SOOC_EXTENSIONS:
         return "SOOC"
     if suffix in RAW_EXTENSIONS:
         return "RAW"
+    if suffix in VIDEO_EXTENSIONS:
+        return "VIDEO"
     return None
 
 

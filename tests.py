@@ -180,14 +180,29 @@ class TestClassifyFile(unittest.TestCase):
     def test_raw_rw2(self):
         self.assertEqual(pi.classify_file(Path("P1000001.RW2")), "RAW")
 
+    def test_video_mp4(self):
+        self.assertEqual(pi.classify_file(Path("clip.mp4")), "VIDEO")
+
+    def test_video_mp4_uppercase(self):
+        self.assertEqual(pi.classify_file(Path("clip.MP4")), "VIDEO")
+
+    def test_video_mov(self):
+        self.assertEqual(pi.classify_file(Path("clip.MOV")), "VIDEO")
+
+    def test_video_mts(self):
+        self.assertEqual(pi.classify_file(Path("00001.MTS")), "VIDEO")
+
+    def test_video_m2ts(self):
+        self.assertEqual(pi.classify_file(Path("00001.m2ts")), "VIDEO")
+
     def test_unknown_xmp(self):
         self.assertIsNone(pi.classify_file(Path("file.xmp")))
 
     def test_unknown_thm(self):
         self.assertIsNone(pi.classify_file(Path("file.THM")))
 
-    def test_unknown_mp4(self):
-        self.assertIsNone(pi.classify_file(Path("video.mp4")))
+    def test_unknown_avi(self):
+        self.assertIsNone(pi.classify_file(Path("video.avi")))
 
     def test_no_extension(self):
         self.assertIsNone(pi.classify_file(Path("noextension")))
@@ -390,6 +405,21 @@ class TestBuildDestPath(unittest.TestCase):
         dest = pi.build_dest_path(photo, self.tmp)
         self.assertIn(pi.UNKNOWN_CAMERA, dest.parts)
 
+    def test_category_video(self):
+        """VIDEO category places the file inside the VIDEO subfolder."""
+        photo = self._make_photo("SONY", datetime(2026, 3, 5), "VIDEO", "C0001.MP4")
+        dest = pi.build_dest_path(photo, self.tmp)
+        self.assertIn("VIDEO", dest.parts)
+        self.assertEqual(dest.name, "C0001.MP4")
+
+    def test_camera_subdirs_include_video(self):
+        """Verifies that SOOC, RAW, EDITED and VIDEO are all created."""
+        photo = self._make_photo("CANON", datetime(2026, 2, 10), "VIDEO", "MVI_001.MP4")
+        pi.build_dest_path(photo, self.tmp)
+        camera_dir = self.tmp / "2026" / "02-10" / "CANON"
+        for subdir in ("SOOC", "RAW", "EDITED", "VIDEO"):
+            self.assertTrue((camera_dir / subdir).is_dir(), f"Missing {subdir}")
+
 
 # ---------------------------------------------------------------------------
 # Tests: collision resolution
@@ -532,9 +562,21 @@ class TestScanVolume(unittest.TestCase):
 
     def test_ignores_unsupported(self):
         self._create_file("MISC/note.txt", b"hello")
-        self._create_file("VIDEO/clip.mp4", b"\x00" * 100)
+        self._create_file("MISC/sidecar.xmp", b"<?xml")
         photos = pi.scan_volume(self.tmp)
         self.assertEqual(len(photos), 0)
+
+    def test_finds_video(self):
+        self._create_file("PRIVATE/AVCHD/00001.MTS", b"\x00" * 100)
+        photos = pi.scan_volume(self.tmp)
+        self.assertEqual(len(photos), 1)
+        self.assertEqual(photos[0].category, "VIDEO")
+
+    def test_finds_video_mp4(self):
+        self._create_file("DCIM/100CANON/MVI_0001.MP4", b"\x00" * 100)
+        photos = pi.scan_volume(self.tmp)
+        self.assertEqual(len(photos), 1)
+        self.assertEqual(photos[0].category, "VIDEO")
 
     def test_ignores_hidden_files(self):
         self._create_file(".Spotlight-V100/Store-V2/photo.jpg", b"\xff\xd8\xff\xd9")
