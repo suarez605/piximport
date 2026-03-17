@@ -14,6 +14,7 @@ organised by EXIF date and camera make.
         └── SONY/
             ├── SOOC/    ← JPEG, HEIF, HIF
             ├── RAW/     ← ARW, RAF, NEF, CR2, CR3, DNG, ORF, RW2
+            ├── VIDEO/     ← mp4, MP4, AVI
             └── EDITED/  ← empty, ready for your editing workflow
 ```
 

@@ -6,9 +6,10 @@ Guide for AI agents (Copilot, Claude, Cursor, etc.) working in this repository.
 
 ## Project purpose
 
-`piximport` is a Python 3.11 CLI tool that imports photos from SD cards to
-`~/Pictures`, automatically organising them by EXIF date and camera make.
-The only external dependency is `questionary` (interactive terminal selector).
+`piximport` is a Python 3.11 CLI tool that imports photos and videos from SD
+cards to `~/Pictures`, automatically organising them by EXIF date and camera
+make. The only external dependency is `questionary` (interactive terminal
+selector).
 
 ---
 
@@ -138,9 +139,11 @@ piximport          # command available globally in the venv
 ### Distribution with pip / PyPI
 
 ```bash
-pip install build
+pip install --upgrade build twine
+rm -rf dist/ build/
 python -m build         # generates dist/*.whl and dist/*.tar.gz
-pip install dist/piximport-*.whl
+twine check dist/*
+twine upload dist/*     # requires PyPI credentials or API token
 ```
 
 ### Distribution with pipx (recommended for end users)
@@ -163,7 +166,7 @@ main()
   └── list_external_volumes()     → detects external /Volumes/*
   └── display_volume_menu()       → questionary selector, returns Path or None
   └── scan_volume()               → recursive os.scandir → sorted PhotoInfo list
-        └── classify_file()       → extension → "SOOC" | "RAW" | None
+        └── classify_file()       → extension → "SOOC" | "RAW" | "VIDEO" | None
         └── read_exif()           → (make, date) with mtime fallback
   └── select_photos()             → checkbox by year/day, returns filtered list
         └── _group_by_date()      → {year: {MM-DD: [PhotoInfo]}}
@@ -202,9 +205,25 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## Adding support for videos or sidecar files
 
-Currently the tool ignores everything that is not SOOC or RAW. To add videos:
+Video import is already supported. The following formats are recognised:
+`.mp4`, `.mov`, `.mts`, `.m2ts`. Files are placed in the `VIDEO` subfolder
+inside each camera make directory:
 
-1. Add the extensions to a new `VIDEO_EXTENSIONS` set.
-2. Update `classify_file()` to return `"VIDEO"`.
-3. Update `CAMERA_SUBDIRS` if a dedicated subfolder is wanted.
+```
+~/Pictures/<YEAR>/<MM-DD>/<MAKE>/VIDEO/
+```
+
+Videos do not carry EXIF metadata; the file's modification time is always
+used as the date fallback.
+
+To add a new video format:
+
+1. Add the extension (lowercase) to `VIDEO_EXTENSIONS` in `__init__.py`.
+2. Add a `test_video_<ext>` test in `TestClassifyFile` in `tests.py`.
+
+To add support for sidecar files (`.xmp`, `.THM`, etc.):
+
+1. Add a new extension set (e.g. `SIDECAR_EXTENSIONS`).
+2. Update `classify_file()` to return a new category string (e.g. `"SIDECAR"`).
+3. Add the category to `CAMERA_SUBDIRS` if a dedicated subfolder is wanted.
 4. Add corresponding tests.
